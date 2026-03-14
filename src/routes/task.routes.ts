@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { authenticate } from "../middleware/auth";
 import { requireSenior, requireAnyRole } from "../middleware/rbac";
+import { validateRequest } from "../middleware/validate";
 import taskController from "../controllers/task.controller";
+import { createTaskSchema, updateTaskSchema } from "../validations/tasks.validations";
+import { taskIdParamSchema, taskQuerySchema } from "../validations/common.validations";
 
 const router = Router();
 
@@ -91,6 +94,7 @@ router.post(
   "/",
   authenticate,
   requireSenior,
+  validateRequest({ body: createTaskSchema }),
   taskController.createTask
 );
 
@@ -122,6 +126,7 @@ router.get(
   "/",
   authenticate,
   requireAnyRole,
+  validateRequest({ query: taskQuerySchema }),
   taskController.getTasks
 );
 
@@ -152,6 +157,7 @@ router.get(
   "/:taskId",
   authenticate,
   requireAnyRole,
+  validateRequest({ params: taskIdParamSchema }),
   taskController.getTaskById
 );
 
@@ -188,6 +194,7 @@ router.patch(
   "/:taskId",
   authenticate,
   requireAnyRole,
+  validateRequest({ body: updateTaskSchema, params: taskIdParamSchema }),
   taskController.updateTask
 );
 
@@ -218,6 +225,7 @@ router.delete(
   "/:taskId",
   authenticate,
   requireSenior,
+  validateRequest({ params: taskIdParamSchema }),
   taskController.deleteTask
 );
 

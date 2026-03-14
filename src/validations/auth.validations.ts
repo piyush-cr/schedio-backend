@@ -13,7 +13,6 @@ export const registerSchema = z.object({
       "Invalid phone number. Use E.164 format, e.g. +15551234567"
     ),
   role: z.nativeEnum(UserRole),
-  /** Optional position (EMPLOYEE | INTERN). Only applies to non-ADMIN users. */
   position: z.nativeEnum(UserPosition).optional(),
   teamId: z.string().optional(),
   officeLat: z.number().optional(),

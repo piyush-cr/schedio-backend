@@ -10,16 +10,11 @@ import {
   UpdateTaskParams,
 } from "../types/tasks.types";
 import { queueNotification } from "../jobs/queues/app.queue";
-import { Taskmodel } from "../models/Task";
 import userCrud from "../crud/user.crud";
 import taskCrud from "../crud/task.crud";
+import auditLogCrud from "../crud/auditLog.crud";
 
-import { sendNotification } from "../firebase/messaging";
-
-import {
-  executeWithTransaction,
-  createAuditLogEntry,
-} from "../utils/transaction";
+import { executeWithTransaction } from "../utils/transaction";
 
 async function createTask(
   input: CreateTaskInput,
@@ -108,10 +103,8 @@ async function createTask(
   const newTask = await executeWithTransaction(async (session) => {
     // Check for duplicates with session lock
     if (orConditions.length > 0) {
-      const tasks = await Taskmodel.find({ $or: orConditions }).session(
-        session
-      );
-      if (tasks[0]) {
+      const duplicates = await taskCrud.findDuplicateCheck(orConditions, session);
+      if (duplicates.length > 0) {
         throw new Error("Task with similar title or description already exists");
       }
     }
@@ -129,16 +122,22 @@ async function createTask(
   // 🔹 If parentTaskId exists → create SUBTASK
   if (input.parentTaskId) {
     const filter = TaskRBAC.single(input.parentTaskId, assignedById, role);
-    const parentTask = await Taskmodel.findOne(filter);
+    const parentTask = await taskCrud.findOne(filter, session);
     if (!parentTask) throw new Error("Parent task not found or access denied");
 
-    parentTask.subTasks.push({
-      title: input.title,
-      assignedToId: assignedUser._id,
-      assignedById: new mongoose.Types.ObjectId(assignedById),
-    });
+    const updatedTask = await taskCrud.pushSubtask(
+      input.parentTaskId,
+      {
+        title: input.title,
+        assignedToId: assignedUser._id,
+        assignedById: new mongoose.Types.ObjectId(assignedById),
+      },
+      session
+    );
 
-    await parentTask.save();
+    if (!updatedTask) {
+      throw new Error("Failed to create subtask");
+    }
 
     // Notify assigned user about subtask
     if (assignedUser.fcmToken) {
@@ -156,13 +155,13 @@ async function createTask(
     return {
       success: true,
       message: "Subtask created",
-      task: await enrichTaskWithUsers(parentTask)
+      task: await enrichTaskWithUsers(updatedTask)
     };
   }
 
   // 🔹 Else create NORMAL TASK
-  const newTask = await taskCrud.create(newTaskData,   session);
-  await createAuditLogEntry(
+  const newTask = await taskCrud.create(newTaskData, session);
+  await auditLogCrud.create(
     {
       action: "TASK_CREATED",
       performedBy: assignedById,
@@ -365,50 +364,57 @@ async function updateTask({
   const updated = await executeWithTransaction(async (session) => {
   // 🔹 If updating a SUBTASK
   if (updateData.subTaskId) {
-    const filter = TaskRBAC.update(taskId, userId, role);
-    const task = await Taskmodel.findOne(filter);
+    const filter = TaskRBAC.single(taskId, userId, role);
+    const task = await taskCrud.findOne(filter, session);
     if (!task) throw new Error("Task not found or access denied");
 
-    const subTask = task.subTasks.id(updateData.subTaskId);
-    if (!subTask) throw new Error("Subtask not found");
+    // Find the subtask to get the assigner info before updating
+    const subtask = task.subTasks?.find((st: any) => st._id.toString() === updateData.subTaskId);
+    if (!subtask) throw new Error("Subtask not found");
 
-    if (updateData.title) subTask.title = updateData.title;
-    if (typeof updateData.isCompleted === "boolean") {
-      subTask.isCompleted = updateData.isCompleted;
-      subTask.completedAt = updateData.isCompleted ? new Date() : null;
+    const updatedTask = await taskCrud.updateSubtask(
+      taskId,
+      updateData.subTaskId,
+      {
+        title: updateData.title,
+        isCompleted: updateData.isCompleted,
+      },
+      session
+    );
 
-      // Notify assigner when subtask is completed
-      if (updateData.isCompleted) {
-        const assigner = await userCrud.findById(subTask.assignedById.toString());
-        if (assigner && assigner.fcmToken) {
-          await queueNotification({
-            token: assigner.fcmToken,
-            title: "Subtask Completed",
-            body: `Subtask "${subTask.title}" has been completed.`,
-            data: {
-              taskId: task._id.toString(),
-              type: "SUBTASK_COMPLETED",
-            },
-          });
-        }
+    if (!updatedTask) {
+      throw new Error("Subtask not found or update failed");
+    }
+
+    // Notify assigner when subtask is completed
+    if (updateData.isCompleted && subtask.assignedById) {
+      const assigner = await userCrud.findById(subtask.assignedById.toString());
+      if (assigner && assigner.fcmToken) {
+        await queueNotification({
+          token: assigner.fcmToken,
+          title: "Subtask Completed",
+          body: `Subtask "${subtask.title}" has been completed.`,
+          data: {
+            taskId: task._id.toString(),
+            type: "SUBTASK_COMPLETED",
+          },
+        });
       }
     }
 
-    await task.save();
-    return await enrichTaskWithUsers(task);
+    return await enrichTaskWithUsers(updatedTask);
   }
 
   // 🔹 Else update NORMAL TASK
   const filter = TaskRBAC.update(taskId, userId, role);
-  //@ts-ignore
-  const updated = await taskCrud.updateOne(filter, updateData,session);
+  const updated = await taskCrud.updateOne(filter, updateData, session);
 
     if (!updated) {
       throw new Error("Task not found or access denied");
     }
 
     // Create audit log for update
-    await createAuditLogEntry(
+    await auditLogCrud.create(
       {
         action: "TASK_UPDATED",
         performedBy: userId,
@@ -435,7 +441,6 @@ async function deleteTask({ taskId, userId, role }: DeleteTaskParams) {
   // Use transaction for atomic delete with audit log
   await executeWithTransaction(async (session) => {
     const filter = TaskRBAC.delete(taskId, userId, role);
-    //@ts-ignore
     const deleted = await taskCrud.deleteOne(filter, session);
 
     if (!deleted) {
@@ -443,7 +448,7 @@ async function deleteTask({ taskId, userId, role }: DeleteTaskParams) {
     }
 
     // Create audit log for deletion
-    await createAuditLogEntry(
+    await auditLogCrud.create(
       {
         action: "TASK_DELETED",
         performedBy: userId,

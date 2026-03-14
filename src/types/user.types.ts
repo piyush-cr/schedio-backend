@@ -1,4 +1,14 @@
-import { UserRole, UserPosition } from "../types";
+import mongoose, { Document } from "mongoose";
+import { UserRole, UserPosition, EmployeeProfile } from "../types";
+
+export interface IUser
+  extends Document,
+  Omit<EmployeeProfile, "id">,
+  IUserMethods {
+  _id: mongoose.Types.ObjectId;
+  position?: UserPosition;
+  fcmToken?: string;
+}
 
 export type UserCreateInput = {
   employeeId: string;

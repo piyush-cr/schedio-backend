@@ -1,10 +1,15 @@
 import { appQueue } from './queues/app.queue';
 import { setupAppWorker } from './workers/app.worker';
+import { hasBullMQRedis } from '../db/redis';
 import { logger } from '../utils/logger';
 
 export { appQueue };
 
 export const initJobs = async () => {
+    if (!hasBullMQRedis) {
+        logger.warn('REDIS_URL not set – background jobs and worker disabled');
+        return;
+    }
     logger.info('Initializing background jobs...');
     setupAppWorker();
 

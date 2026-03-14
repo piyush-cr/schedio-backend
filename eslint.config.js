@@ -23,6 +23,18 @@ export default [
         rules: {
             "no-unused-vars": "off",
             "@typescript-eslint/no-unused-vars": ["warn"],
+            // Prevent services from importing models directly
+            "no-restricted-imports": [
+                "error",
+                {
+                    patterns: [
+                        {
+                            group: ["**/models/*"],
+                            message: "Services must not import models directly. Use CRUD modules instead.",
+                        },
+                    ],
+                },
+            ],
         },
     },
 

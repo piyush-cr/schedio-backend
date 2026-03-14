@@ -2,10 +2,7 @@ import { Response } from "express";
 import attendanceService from "../services/attendance.service";
 import { AuthRequest } from "../middleware/auth";
 import { MulterRequest } from "../types";
-import { checkInSchema, checkOutSchema } from "../validations/attendance.validations";
-import { getFileUrl, } from "../utils/fileUpload";
 import { deleteLocalFile } from "../utils/deleteFile";
-import { z } from "zod";
 
 async function checkIn(
     req: AuthRequest & MulterRequest,
@@ -17,19 +14,15 @@ async function checkIn(
     }
 
     try {
-        const validatedData = checkInSchema.parse(req.body);
-
-        // Don't upload to ImageKit yet - pass the local file path to the service
-        // The worker will handle the upload asynchronously
         const localFilePath = req.file?.path || '';
 
         const result = await attendanceService.checkIn({
             userId: req.user!.userId,
-            latitude: Number(validatedData.latitude),
-            longitude: Number(validatedData.longitude),
-            timestamp: Number(validatedData.timestamp),
-            localFilePath, // Pass local path instead of ImageKit URL
-            metadata: validatedData.metadata
+            latitude: Number(req.body.latitude),
+            longitude: Number(req.body.longitude),
+            timestamp: Number(req.body.timestamp),
+            localFilePath,
+            metadata: req.body.metadata
         });
 
         return res.status(200).json({
@@ -38,15 +31,8 @@ async function checkIn(
             data: result,
         });
     } catch (error: any) {
-        // if (req.file?.path) {
-        //     await deleteLocalFile(req.file.path).catch(console.error);
-        // }
-        if (error instanceof z.ZodError) {
-            return res.status(400).json({
-                success: false,
-                message: "Validation error",
-                errors: error.errors,
-            });
+        if (req.file?.path) {
+            await deleteLocalFile(req.file.path).catch(console.error);
         }
         return res.status(400).json({
             success: false,
@@ -67,19 +53,15 @@ export async function checkOut(
 
     try {
         console.log("the data body", req.body, req.file?.path)
-        const validatedData = checkOutSchema.parse(req.body);
-
-        // Don't upload to ImageKit yet - pass the local file path to the service
-        // The worker will handle the upload asynchronously
         const localFilePath = req.file?.path || '';
 
         const result = await attendanceService.checkOut({
             userId: req.user!.userId,
-            latitude: Number(validatedData.latitude),
-            longitude: Number(validatedData.longitude),
-            timestamp: Number(validatedData.timestamp),
-            isAuto: validatedData.isAuto ?? false,
-            localFilePath, // Pass local path instead of ImageKit URL
+            latitude: Number(req.body.latitude),
+            longitude: Number(req.body.longitude),
+            timestamp: Number(req.body.timestamp),
+            isAuto: req.body.isAuto ?? false,
+            localFilePath,
         });
 
         return res.status(200).json({
@@ -91,14 +73,6 @@ export async function checkOut(
     } catch (error: any) {
         if (req.file?.path) {
             await deleteLocalFile(req.file.path).catch(console.error);
-        }
-
-        if (error instanceof z.ZodError) {
-            return res.status(400).json({
-                success: false,
-                message: "Validation error",
-                errors: error.errors,
-            });
         }
 
         return res.status(400).json({
@@ -139,22 +113,11 @@ async function getMonthlyAttendance(
     res: Response
 ) {
     try {
-        const month =
-            typeof req.query.month === "string"
-                ? Number(req.query.month)
-                : undefined;
+        const { month, year } = req.query as any;
 
-        const year =
-            typeof req.query.year === "string"
-                ? Number(req.query.year)
-                : undefined;
+        console.log("month", month);
+        console.log("year", year);
 
-        if (Number(req.query.month) == 0) {
-            return res.status(200).json({
-                success: true,
-                message: "0 based month indexing is not allowed",
-            });
-        }
         const result = await attendanceService.getMonthlyAttendance({
             userId: req.user!.userId,
             month,
@@ -236,8 +199,7 @@ async function getUsersForAttendanceView(
     res: Response
 ) {
     try {
-        const page = req.query.page ? parseInt(req.query.page as string) : 1;
-        const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+        const { page, limit } = req.query as any;
 
         const result = await attendanceService.getUsersForAttendanceView({
             requesterId: req.user!.userId,
@@ -279,40 +241,21 @@ export async function getUserAttendanceForSenior(
                 message: "userId is required",
             });
         }
+        const { weekStart, month, year, startDate, endDate, page, limit } = req.query as any;
+
         const data = await attendanceService.getUserAttendanceForSenior({
             requester: {
                 userId: req.user!.userId,
                 role: req.user!.role!,
             },
             targetUserId: userId,
-            weekStart:
-                typeof req.query.weekStart === "string"
-                    ? req.query.weekStart
-                    : undefined,
-            month:
-                typeof req.query.month === "string"
-                    ? Number(req.query.month)
-                    : undefined,
-            year:
-                typeof req.query.year === "string"
-                    ? Number(req.query.year)
-                    : undefined,
-            startDate:
-                typeof req.query.startDate === "string"
-                    ? req.query.startDate
-                    : undefined,
-            endDate:
-                typeof req.query.endDate === "string"
-                    ? req.query.endDate
-                    : undefined,
-            page:
-                typeof req.query.page === "string"
-                    ? Number(req.query.page)
-                    : undefined,
-            limit:
-                typeof req.query.limit === "string"
-                    ? Number(req.query.limit)
-                    : undefined,
+            weekStart,
+            month,
+            year,
+            startDate,
+            endDate,
+            page,
+            limit,
         });
 
 

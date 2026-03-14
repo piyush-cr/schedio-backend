@@ -11,9 +11,7 @@ export const createUserSchema = z.object({
       /^\+[1-9]\d{7,14}$/,
       "Invalid phone number. Use E.164 format, e.g. +15551234567"
     ),
-  /** Role must be SENIOR or JUNIOR (admin cannot create another ADMIN). */
   role: z.enum(["SENIOR", "JUNIOR"]),
-  /** Optional position — EMPLOYEE (default) or INTERN. */
   position: z.nativeEnum(UserPosition).optional(),
   teamId: z.string().optional(),
   shiftStart: z.string().optional(),

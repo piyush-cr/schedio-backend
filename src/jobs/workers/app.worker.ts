@@ -1,13 +1,15 @@
 import "dotenv/config"
 import { Worker, Job } from 'bullmq';
-import { redisConfig } from '../../db/redis';
+import { hasBullMQRedis, redisConfig } from '../../db/redis';
 import { APP_QUEUE_NAME } from '../queues/app.queue';
 import { logger } from '../../utils/logger';
-import { redisConnection } from '../../db/redis';
+import { upstashRedis } from '../../db/redis';
 import attendanceStatsCrud from '../../crud/attendanceStats.crud';
 import { StatsType } from '../../models/AttendanceStats';
 
 export const setupAppWorker = () => {
+    if (!hasBullMQRedis || !redisConfig) return;
+
     // Temporarily suppress console warnings during worker initialization
     const originalConsoleError = console.error;
     console.error = (...args: any[]) => {
@@ -222,7 +224,12 @@ const sendPushNotification = async (job: Job) => {
 
 const calculateAttendanceStats = async (job: Job) => {
     logger.info('Calculating attendance stats:', job.data);
-    const { userId, date, type } = job.data;
+    const { userId, date, type, types } = job.data as {
+        userId: string;
+        date: string;
+        type?: 'DAILY' | 'WEEKLY' | 'MONTHLY';
+        types?: Array<'DAILY' | 'WEEKLY' | 'MONTHLY'>;
+    };
 
     try {
         // Import dependencies dynamically
@@ -232,24 +239,32 @@ const calculateAttendanceStats = async (job: Job) => {
 
         const currentDate = new Date(date);
 
-        switch (type) {
-            case 'DAILY':
-                await calculateDailyStats(userId, date, attendanceCrud);
-                break;
+        const runType = async (t: 'DAILY' | 'WEEKLY' | 'MONTHLY') => {
+            switch (t) {
+                case 'DAILY':
+                    await calculateDailyStats(userId, date, attendanceCrud);
+                    return;
+                case 'WEEKLY':
+                    await calculateWeeklyStats(userId, currentDate, attendanceCrud, { format, startOfWeek, endOfWeek, AttendanceStatus });
+                    return;
+                case 'MONTHLY':
+                    await calculateMonthlyStats(userId, currentDate, attendanceCrud, { format, startOfMonth, endOfMonth, AttendanceStatus });
+                    return;
+            }
+        };
 
-            case 'WEEKLY':
-                await calculateWeeklyStats(userId, currentDate, attendanceCrud, { format, startOfWeek, endOfWeek, AttendanceStatus });
-                break;
-
-            case 'MONTHLY':
-                await calculateMonthlyStats(userId, currentDate, attendanceCrud, { format, startOfMonth, endOfMonth, AttendanceStatus });
-                break;
-
-            default:
-                logger.warn(`Unknown stats type: ${type}`);
+        // Backwards compatible: accept either `type` or `types`.
+        if (Array.isArray(types) && types.length > 0) {
+            for (const t of types) {
+                await runType(t);
+            }
+        } else if (type) {
+            await runType(type);
+        } else {
+            logger.warn(`Stats job missing type(s): ${JSON.stringify(job.data)}`);
         }
 
-        logger.info(`Stats calculated successfully for user ${userId}: ${type}`);
+        logger.info(`Stats calculated successfully for user ${userId}: ${types?.join(',') || type}`);
     } catch (error) {
         logger.error('Failed to calculate attendance stats:', error);
         throw error;
@@ -289,14 +304,13 @@ const calculateDailyStats = async (userId: string, date: string, attendanceCrud:
         logger.error('Failed to store daily stats in DB:', dbError);
     }
 
-    // Cache in Redis (24 hours)
+    // Cache in Redis (24 hours) - Upstash REST
     try {
-        const redisKey = `stats:daily:${userId}:${date}`;
-        if (!redisConnection.isOpen) {
-            await redisConnection.connect();
+        if (upstashRedis) {
+            const redisKey = `stats:daily:${userId}:${date}`;
+            await upstashRedis.set(redisKey, JSON.stringify(stats), { ex: 86400 });
+            logger.info(`Daily stats cached in Redis: ${redisKey}`);
         }
-        await redisConnection.set(redisKey, JSON.stringify(stats), { EX: 86400 });
-        logger.info(`Daily stats cached in Redis: ${redisKey}`);
     } catch (cacheError) {
         logger.error('Failed to cache daily stats in Redis:', cacheError);
     }
@@ -413,14 +427,13 @@ const calculateWeeklyStats = async (
         logger.error('Failed to store weekly stats in DB:', dbError);
     }
 
-    // Cache in Redis (7 days)
+    // Cache in Redis (7 days) - Upstash REST
     try {
-        const redisKey = `stats:weekly:${userId}:${weekStartStr}`;
-        if (!redisConnection.isOpen) {
-            await redisConnection.connect();
+        if (upstashRedis) {
+            const redisKey = `stats:weekly:${userId}:${weekStartStr}`;
+            await upstashRedis.set(redisKey, JSON.stringify(weeklyStats), { ex: 604800 });
+            logger.info(`Weekly stats cached in Redis: ${redisKey}`);
         }
-        await redisConnection.set(redisKey, JSON.stringify(weeklyStats), { EX: 604800 });
-        logger.info(`Weekly stats cached in Redis: ${redisKey}`);
     } catch (cacheError) {
         logger.error('Failed to cache weekly stats in Redis:', cacheError);
     }
@@ -531,14 +544,13 @@ const calculateMonthlyStats = async (
         logger.error('Failed to store monthly stats in DB:', dbError);
     }
 
-    // Cache in Redis (30 days)
+    // Cache in Redis (30 days) - Upstash REST
     try {
-        const redisKey = `stats:monthly:${userId}:${monthStartStr}`;
-        if (!redisConnection.isOpen) {
-            await redisConnection.connect();
+        if (upstashRedis) {
+            const redisKey = `stats:monthly:${userId}:${monthStartStr}`;
+            await upstashRedis.set(redisKey, JSON.stringify(monthlyStats), { ex: 2592000 });
+            logger.info(`Monthly stats cached in Redis: ${redisKey}`);
         }
-        await redisConnection.set(redisKey, JSON.stringify(monthlyStats), { EX: 2592000 });
-        logger.info(`Monthly stats cached in Redis: ${redisKey}`);
     } catch (cacheError) {
         logger.error('Failed to cache monthly stats in Redis:', cacheError);
     }

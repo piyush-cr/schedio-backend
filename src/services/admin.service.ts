@@ -1,7 +1,6 @@
 import crypto from "crypto";
-import { User } from "../models/User";
-import { AuditLog } from "../models/AuditLog";
 import userCrud from "../crud/user.crud";
+import auditLogCrud from "../crud/auditLog.crud";
 import { ApiError } from "../utils/ApiError";
 import { UserRole } from "../types";
 
@@ -13,25 +12,11 @@ export async function createUserByAdmin(adminId: string, data: any) {
     );
   }
 
-  // if (data.role === UserRole.SENIOR && data.teamId) {
-  //   const existingSenior = await User.findOne({
-  //     role: UserRole.SENIOR,
-  //     teamId: data.teamId,
-  //   });
+  const existingUser = await userCrud.findOneByEmailOrEmployeeId(
+    data.email,
+    data.employeeId
+  );
 
-  //   if (existingSenior) {
-  //     return {
-  //       success: false,
-  //       message: "A Senior user already exists in this team. Only one senior is allowed per team.",
-  //     };
-  //   }
-  // }
-
-  const existingUser = await User.findOne({
-    $or: [{ email: data.email }, { employeeId: data.employeeId }],
-  });
-
-  console.log(existingUser)
   if (existingUser) {
     return {
       success: false,
@@ -45,11 +30,9 @@ export async function createUserByAdmin(adminId: string, data: any) {
     const user = await userCrud.create({
       ...data,
       password: plainPassword,
-
     })
 
-
-    await AuditLog.create({
+    await auditLogCrud.create({
       action: "USER_CREATED",
       performedBy: adminId,
       targetUser: user._id,
@@ -59,7 +42,7 @@ export async function createUserByAdmin(adminId: string, data: any) {
       },
     });
 
-    const userObj = user.toObject();
+    const userObj = user.toObject ? user.toObject() : user;
     //@ts-ignore
     delete userObj.password;
 
@@ -69,7 +52,6 @@ export async function createUserByAdmin(adminId: string, data: any) {
       tempPassword: plainPassword,
     };
   }
-
 }
 
 
@@ -79,72 +61,49 @@ async function adminChangeUserPassword(
   userId: string,
   newPassword: string
 ) {
-  const user = await User.findById(userId).select("+password");
+  const user = await userCrud.findById(userId);
 
   if (!user) {
     throw new Error("User not found");
   }
 
-  user.password = newPassword;
+  await userCrud.updatePassword(userId, newPassword);
 
-
-  await user.save();
+  await auditLogCrud.create({
+    action: "USER_PASSWORD_CHANGED",
+    performedBy: adminId,
+    targetUser: userId,
+    metadata: {},
+  });
 
   return { success: true };
 }
 
-/**
- * UPDATE USER
- */
 async function updateUserByAdmin(
   adminId: string,
   userId: string,
   updates: any
 ) {
-  const user = await User.findById(userId);
+  const user = await userCrud.findById(userId);
 
   if (!user) {
     throw new Error("User not found");
   }
 
-  // If role is being updated to SENIOR or teamId is changing for a SENIOR
-  // if (
-  //   (updates.role === UserRole.SENIOR && updates.teamId) || // Changing role to SENIOR with teamId
-  //   (updates.role === UserRole.SENIOR && user.teamId && !updates.teamId) || // Changing role to SENIOR keep existing teamId
-  //   (user.role === UserRole.SENIOR && updates.teamId) // Existing SENIOR changing teamId
-  // ) {
-  //   const targetTeamId = updates.teamId || user.teamId;
+  const updatedUser = await userCrud.updateById(userId, updates);
 
-  //   // If checking specifically for this user, we need to make sure we don't count the user themselves 
-  //   // if they are already the senior in that team (though logic implies we are checking for conflicts)
-
-  //   // Actually simpler check:
-  //   // If we are assigning a teamId and the resulting user will be a SENIOR
-  //   const newRole = updates.role || user.role;
-  //   if (newRole === UserRole.SENIOR && targetTeamId) {
-  //     const existingSenior = await User.findOne({
-  //       role: UserRole.SENIOR,
-  //       teamId: targetTeamId,
-  //       _id: { $ne: user._id } // exclude self
-  //     });
-
-  //     if (existingSenior) {
-  //       throw new Error("A Senior user already exists in this team.");
-  //     }
-  //   }
-  // }
-
-  Object.assign(user, updates);
-  await user.save();
-
-  await AuditLog.create({
+  await auditLogCrud.create({
     action: "USER_UPDATED",
     performedBy: adminId,
-    targetUser: user._id,
+    targetUser: userId,
     metadata: updates,
   });
 
-  const userObj = user.toObject();
+  if (!updatedUser) {
+    throw new Error("User update failed");
+  }
+
+  const userObj = updatedUser.toObject ? updatedUser.toObject() : updatedUser;
   //@ts-ignore
   delete userObj.password;
 
@@ -176,13 +135,10 @@ async function getAllUsersByAdmin(query: {
     ];
   }
 
-  const users = await User.find(filter)
-    .select("-password")
-    .skip((page - 1) * limit)
-    .limit(limit)
-    .sort({ createdAt: -1 });
-
-  const total = await User.countDocuments(filter);
+  const [users, total] = await Promise.all([
+    userCrud.findManyPaginated(filter, { page, limit }),
+    userCrud.count(filter),
+  ]);
 
   return {
     users,
@@ -192,24 +148,20 @@ async function getAllUsersByAdmin(query: {
   };
 }
 
-/**
- * GET USER BY ID
- */
 async function getUserByAdmin(userId: string) {
-  const user = await User.findById(userId).select("-password");
+  const user = await userCrud.findById(userId);
 
   if (!user) {
     throw new Error("User not found");
   }
 
-  return user;
+  const userObj = user.toObject ? user.toObject() : user;
+  delete userObj.password;
+  return userObj;
 }
 
-/**
- * DELETE USER BY ADMIN
- */
 async function deleteUserByAdmin(adminId: string, userId: string) {
-  const user = await User.findById(userId);
+  const user = await userCrud.findById(userId);
 
   if (!user) {
     throw new Error("User not found");
@@ -225,12 +177,12 @@ async function deleteUserByAdmin(adminId: string, userId: string) {
 
   await userCrud.deleteById(userId);
 
-  await AuditLog.create({
+  await auditLogCrud.create({
     action: "USER_DELETED",
     performedBy: adminId,
-    targetUser: user._id,
+    targetUser: userId,
     resource: "User",
-    resourceId: user._id,
+    resourceId: userId,
   });
 
   return { success: true };

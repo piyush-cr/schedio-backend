@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: schedio-api
+  namespace: schedio
+  labels:
+    app: schedio
+    component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: schedio
+      component: api
+  template:
+    metadata:
+      labels:
+        app: schedio
+        component: api
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/REPLACE_ORG/schedio-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: schedio-config
+            - secretRef:
+                name: schedio-secrets
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

@@ -1,4 +1,4 @@
-import { UpdateQuery } from "mongoose";
+import { ClientSession, UpdateQuery } from "mongoose";
 import { User, IUser } from "../models/User";
 import {
   UserCreateInput,
@@ -12,7 +12,7 @@ async function create(data: UserCreateInput): Promise<IUser> {
     const user = new User(data);
     return user.save();
   } catch (error) {
-    throw new Error("User couldn't be created")
+    throw new Error("User couldn't be created");
   }
 }
 
@@ -34,20 +34,26 @@ async function findMany(filter: UserFilter = {}): Promise<IUser[]> {
 
 async function updateById(
   userId: string,
-  update: UpdateQuery<UserUpdateInput>
+  update: UpdateQuery<UserUpdateInput>,
+  session?: ClientSession
 ): Promise<IUser | null> {
-  return User.findByIdAndUpdate(userId, update, {
+  const options: any = {
     new: true,
     runValidators: true,
-  });
+  };
+  if (session) options.session = session;
+  return User.findByIdAndUpdate(userId, update, options);
 }
 
-async function updatePassword(userId: string, password: string): Promise<void> {
-  const user = await User.findById(userId).select("+password");
-  if (!user) throw new Error("User not found");
-
+async function updatePassword(
+  userId: string,
+  password: string,
+  session?: ClientSession
+): Promise<IUser | null> {
+  const user = await User.findById(userId);
+  if (!user) return null;
   user.password = password;
-  await user.save();
+  return user.save({ session });
 }
 
 async function deleteById(userId: string): Promise<void> {
@@ -58,29 +64,33 @@ async function validatePassword(
   email: string,
   password: string
 ): Promise<IUser | null> {
-  const user = await User.findOne({ email }).select("+password");
-  console.log("this is user")
-  if (!user) return null;
-
-  console.log(password)
+  const user = await User.findOne({ email: email.toLowerCase() }).select("+password");
+  
+  if (!user) {
+    console.log("User not found for email:", email);
+    return null;
+  }
+  
+  console.log("User found:", user.email);
+  console.log("Password hash exists:", !!user.password);
+  console.log("Password hash:", user.password?.substring(0, 20) + "...");
+  
   const isValid = await user.comparePassword(password);
-  console.log(isValid)
+  console.log("Password valid:", isValid);
+  
   return isValid ? user : null;
 }
 
 async function findUsersForAttendance(role: UserRole, teamId?: string) {
-  const filter =
-    role === UserRole.SENIOR ? { teamId } : {};
+  const filter = role === UserRole.SENIOR ? { teamId } : {};
 
-  return await User.find(filter).select(
-    "_id name employeeId role teamId"
-  );
+  return await User.find(filter)
+    .select("_id name employeeId role teamId");
 }
 
 async function findUserById(userId: string) {
-  return await User.findById(userId).select(
-    "_id name employeeId role teamId"
-  );
+  return await User.findById(userId)
+    .select("_id name employeeId role teamId");
 }
 
 async function findManyPaginated(
@@ -89,11 +99,29 @@ async function findManyPaginated(
 ): Promise<IUser[]> {
   const { page, limit } = options;
   const skip = (page - 1) * limit;
-  return User.find(filter).select("-password").skip(skip).limit(limit);
+  return User.find(filter)
+    .select("-password")
+    .skip(skip)
+    .limit(limit);
 }
 
 async function count(filter: UserFilter = {}): Promise<number> {
   return User.countDocuments(filter);
+}
+
+async function findOneByEmailOrEmployeeId(
+  email?: string,
+  employeeId?: string
+): Promise<IUser | null> {
+  const query: any = {};
+  if (email) query.email = email;
+  if (employeeId) query.employeeId = employeeId;
+
+  if (Object.keys(query).length === 0) {
+    return null;
+  }
+
+  return User.findOne(query);
 }
 
 const userCrud = {
@@ -109,7 +137,8 @@ const userCrud = {
   findUsersForAttendance,
   findUserById,
   findManyPaginated,
-  count
+  count,
+  findOneByEmailOrEmployeeId,
 };
 
 export default userCrud;

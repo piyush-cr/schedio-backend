@@ -10,21 +10,13 @@ import {
     UpdateTaskParams,
     DeleteTaskParams,
 } from "../types/tasks.types";
-import {
-    createTaskSchema,
-    updateTaskSchema,
-} from "../validations/tasks.validations";
-import { z } from "zod";
 
 async function createTask(req: AuthRequest, res: Response) {
     try {
-        const validatedData = createTaskSchema.parse(req.body);
-
         const assignedById = req.user!.userId;
         const role = req.user!.role as UserRole;
 
-
-        const task = await taskService.createTask(validatedData, assignedById, role);
+        const task = await taskService.createTask(req.body, assignedById, role);
 
         if (!task.success) {
             return res.status(400).json({
@@ -39,9 +31,6 @@ async function createTask(req: AuthRequest, res: Response) {
             data: task.task,
         });
     } catch (error) {
-        if (error instanceof z.ZodError) {
-            return res.status(400).json({ success: false, errors: error.errors });
-        }
         return res
             .status(400)
             .json({ success: false, message: (error as Error).message });
@@ -53,13 +42,13 @@ async function getTasks(req: AuthRequest, res: Response) {
         const params: GetTasksParams = {
             userId: req.user!.userId,
             role: req.user!.role as UserRole,
-            page: Math.max(Number(req.query.page) || 1, 1),
-            limit: Math.min(Math.max(Number(req.query.limit) || 10, 1), 100),
-            status: req.query.status as string,
-            priority: req.query.priority as Priority,
-            assignedToId: req.query.assignedToId as string,
-            assignedById: req.query.assignedById as string,
-            search: req.query.search as string,
+            page: req.query.page,
+            limit: req.query.limit,
+            status: req.query.status,
+            priority: req.query.priority,
+            assignedToId: req.query.assignedToId,
+            assignedById: req.query.assignedById,
+            search: req.query.search,
         };
 
         const result = await taskService.getTasks(params);
@@ -103,7 +92,7 @@ async function updateTask(req: AuthRequest, res: Response) {
             taskId: req.params.taskId,
             userId: req.user!.userId,
             role: req.user!.role as UserRole,
-            updateData: req.body as UpdateTaskInput,
+            updateData: req.body,
         };
 
         // Restriction: JUNIOR can only update 'status'
@@ -122,9 +111,7 @@ async function updateTask(req: AuthRequest, res: Response) {
             }
         }
 
-        // Validate body
-        const validatedData = updateTaskSchema.parse(req.body);
-        params.updateData = validatedData;
+        params.updateData = req.body;
 
         const updated = await taskService.updateTask(params);
 
@@ -134,9 +121,6 @@ async function updateTask(req: AuthRequest, res: Response) {
             data: updated,
         });
     } catch (error) {
-        if (error instanceof z.ZodError) {
-            return res.status(400).json({ success: false, errors: error.errors });
-        }
         const msg = (error as Error).message;
         const status = msg.includes("access")
             ? 403

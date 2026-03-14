@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document } from "mongoose";
 import { EmployeeProfile, UserRole, UserPosition } from "../types";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { generateRefreshToken, generateToken } from "../utils/auth";
 import { IUserMethods } from "../types/user.types";
 
@@ -54,11 +54,6 @@ const UserSchema = new Schema<IUser>(
       required: true,
       index: true,
     },
-    /**
-     * Position is only relevant for non-ADMIN users.
-     * EMPLOYEE = regular employee, INTERN = intern.
-     * Admins will have no position set.
-     */
     position: {
       type: String,
       enum: Object.values(UserPosition),
@@ -104,22 +99,21 @@ const UserSchema = new Schema<IUser>(
 
 UserSchema.index({ teamId: 1, role: 1 });
 
-
 UserSchema.pre("save", async function () {
-  // Clear fields for Admin role
+  // ✅ Hash password first, independent of role
+  if (this.isModified("password")) {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+  }
+
+  // ✅ Then clear Admin-irrelevant fields
   if (this.role === UserRole.ADMIN) {
     this.teamId = undefined;
     this.shiftStart = undefined;
     this.shiftEnd = undefined;
+    this.position = undefined; // ⚠️ Admins likely shouldn't have a position either
   }
-
-  if (!this.isModified("password")) return;
-
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
 });
-
-
 UserSchema.methods.comparePassword = async function (
   candidatePassword: string
 ) {

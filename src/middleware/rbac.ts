@@ -26,20 +26,13 @@ export function requireRole(...allowedRoles: UserRole[]) {
 
 export const requireAdmin = requireRole(UserRole.ADMIN);
 
-/** Allows ADMIN and SENIOR (e.g. team-lead actions). */
 export const requireSenior = requireRole(UserRole.SENIOR, UserRole.ADMIN);
 
-/**
- * Allows any non-ADMIN role (SENIOR and JUNIOR).
- * Intern vs. employee distinction is handled by the `position` field,
- * not by a separate role — both are JUNIORs or SENIORs with position=INTERN.
- */
 export const requireSeniorOrJunior = requireRole(
   UserRole.SENIOR,
   UserRole.JUNIOR
 );
 
-/** Allows every authenticated role. */
 export const requireAnyRole = requireRole(
   UserRole.ADMIN,
   UserRole.SENIOR,

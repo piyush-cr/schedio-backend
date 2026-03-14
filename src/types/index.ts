@@ -7,7 +7,6 @@ export enum UserRole {
   ADMIN = "ADMIN",
 }
 
-/** Describes the employment position of a non-admin user. */
 export enum UserPosition {
   EMPLOYEE = "EMPLOYEE",
   INTERN = "INTERN",
@@ -53,7 +52,6 @@ export interface EmployeeProfile {
   password: string;
   role: UserRole;
 
-  /** Position within the company — only meaningful for non-ADMIN users. */
   position?: UserPosition;
 
   // Org / Work

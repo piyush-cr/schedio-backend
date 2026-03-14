@@ -1,12 +1,7 @@
 import userCrud from "../crud/user.crud";
-import { UserFilter, UserUpdateInput } from "../types/user.types";
+import { UserFilter, UserUpdateInput, IUser } from "../types/user.types";
 import { ApiError } from "../utils/ApiError";
-import { IUser } from "../models/User";
 
-/**
- * Fetch a single user by ID (password excluded).
- * Returns null if not found.
- */
 async function getMe(userId: string): Promise<IUser> {
   const user = await userCrud.findById(userId);
   if (!user) {
@@ -33,10 +28,6 @@ async function updateProfile(
   return user;
 }
 
-/**
- * List users with optional filtering.
- * Intended for admin / senior use; callers should enforce RBAC before calling.
- */
 async function listUsers(
   filter: UserFilter = {},
   options: { page: number; limit: number } = { page: 1, limit: 20 }

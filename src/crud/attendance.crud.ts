@@ -35,8 +35,6 @@ function buildQuery(filter: AttendanceFilter): any {
 
 async function findMany(filter: AttendanceFilter = {}): Promise<IAttendance[]> {
   const query = buildQuery(filter);
-  console.log(query)
-  console.log((await Attendance.find(query)).flat())
   return Attendance.find(query).sort({ date: -1 });
 }
 async function create(
@@ -89,7 +87,6 @@ async function findByUserIdAndDate(
   date: string,
   session?: ClientSession
 ): Promise<IAttendance | null> {
-  console.log(date)
   const query = Attendance.findOne({
     userId: mongoose.isValidObjectId(userId)
       ? new mongoose.Types.ObjectId(userId)
@@ -99,10 +96,7 @@ async function findByUserIdAndDate(
   if (session) query.session(session);
   return query;
 }
-/**
- * Atomically creates or updates attendance record
- * Only succeeds if user hasn't checked in yet
- */
+
 async function findOneAndUpdate(
   filter: {
     userId: string;
@@ -156,10 +150,6 @@ async function findOpenAttendances(date: string): Promise<IAttendance[]> {
     .limit(1000);
 }
 
-/**
- * Find ALL open attendances across ALL dates (no date filter).
- * Used by midnight auto-checkout to close any leftover records.
- */
 async function findAllOpenAttendances(): Promise<IAttendance[]> {
   return Attendance.find({
     clockInTime: { $exists: true, $ne: null },
@@ -237,7 +227,8 @@ async function findManyPaginated(
   return Attendance.find(query)
     .sort({ date: -1 })
     .skip(skip)
-    .limit(limit);
+    .limit(limit)
+    .lean();
 }
 
 const attendanceCrud = {

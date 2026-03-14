@@ -1,8 +1,11 @@
 import { Router } from "express";
 import { authenticate } from "../middleware/auth";
 import { requireAdmin, requireSenior, requireSeniorOrJunior } from "../middleware/rbac";
+import { validateRequest } from "../middleware/validate";
 import { upload } from "../utils/fileUpload";
 import attendanceController from "../controllers/attendance.controller";
+import { checkInSchema, checkOutSchema } from "../validations/attendance.validations";
+import { dateQuerySchema, weekStartQuerySchema, monthYearQuerySchema, paginationSchema, userIdParamSchema, attendanceQuerySchema } from "../validations/common.validations";
 
 
 const router = Router();
@@ -90,6 +93,7 @@ router.post(
   authenticate,
   requireSeniorOrJunior,
   upload.fields([{ name: "photo", maxCount: 1 }, { name: "image", maxCount: 1 }]),
+  validateRequest({ body: checkInSchema }),
   attendanceController.checkIn
 );
 
@@ -164,6 +168,7 @@ router.post(
   authenticate,
   requireSeniorOrJunior,
   upload.fields([{ name: "photo", maxCount: 1 }, { name: "image", maxCount: 1 }]),
+  validateRequest({ body: checkOutSchema }),
   attendanceController.checkOut
 );
 
@@ -242,6 +247,7 @@ router.get(
   "/weekly",
   authenticate,
   requireSeniorOrJunior,
+  validateRequest({ query: weekStartQuerySchema }),
   attendanceController.getWeeklyAttendance
 );
 
@@ -331,6 +337,7 @@ router.get(
   "/monthly",
   authenticate,
   requireSeniorOrJunior,
+  validateRequest({ query: monthYearQuerySchema }),
   attendanceController.getMonthlyAttendance
 );
 
@@ -438,6 +445,7 @@ router.get(
   "/day",
   authenticate,
   requireSeniorOrJunior,
+  validateRequest({ query: dateQuerySchema.required({ date: true }) }),
   attendanceController.getAttendanceByDate
 );
 
@@ -523,6 +531,7 @@ router.get(
   "/users",
   authenticate,
   requireSenior,
+  validateRequest({ query: paginationSchema }),
   attendanceController.getUsersForAttendanceView
 );
 
@@ -649,6 +658,7 @@ router.get(
   "/user/:userId",
   authenticate,
   requireSenior,
+  validateRequest({ params: userIdParamSchema, query: attendanceQuerySchema }),
   attendanceController.getUserAttendanceForSenior
 );
 

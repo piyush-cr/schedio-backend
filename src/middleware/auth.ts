@@ -18,8 +18,6 @@ export async function authenticate(
   next: NextFunction
 ): Promise<void> {
   try {
-
-    // const token=req.headers.authorization?.split(" ")
     const token =
       req.cookies?.access_token
       ||

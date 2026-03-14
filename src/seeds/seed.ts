@@ -4,7 +4,7 @@ import { Taskmodel } from "../models/Task";
 import { AuditLog } from "../models/AuditLog";
 import { AttendanceStats, StatsType } from "../models/AttendanceStats";
 import mongoose from "mongoose";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import {
     UserRole,
     UserPosition,
@@ -61,7 +61,13 @@ async function seedUsers(adminId: mongoose.Types.ObjectId) {
             invitedBy: adminId,
         });
     }
-    const createdSeniors = (await User.insertMany(seniors)) as IUser[];
+    // Hash passwords for seniors
+    const hashedSeniors = await Promise.all(seniors.map(async (u) => {
+        const salt = await bcrypt.genSalt(10);
+        u.password = await bcrypt.hash(u.password, salt);
+        return u;
+    }));
+    const createdSeniors = (await User.insertMany(hashedSeniors)) as IUser[];
 
     // Create 3 Juniors (assigned to seniors)
     const juniors: any[] = [];
@@ -100,7 +106,13 @@ async function seedUsers(adminId: mongoose.Types.ObjectId) {
         shiftEnd: "18:00",
         invitedBy: (hoursTestSenior as IUser)._id,
     });
-    const createdJuniors = (await User.insertMany(juniors)) as IUser[];
+    // Hash passwords for juniors
+    const hashedJuniors = await Promise.all(juniors.map(async (u) => {
+        const salt = await bcrypt.genSalt(10);
+        u.password = await bcrypt.hash(u.password, salt);
+        return u;
+    }));
+    const createdJuniors = (await User.insertMany(hashedJuniors)) as IUser[];
 
     // Create 2 Interns (assigned to seniors)
     const interns: any[] = [];
@@ -121,7 +133,13 @@ async function seedUsers(adminId: mongoose.Types.ObjectId) {
             invitedBy: (senior as IUser)._id,
         });
     }
-    const createdInterns = (await User.insertMany(interns)) as IUser[];
+    // Hash passwords for interns
+    const hashedInterns = await Promise.all(interns.map(async (u) => {
+        const salt = await bcrypt.genSalt(10);
+        u.password = await bcrypt.hash(u.password, salt);
+        return u;
+    }));
+    const createdInterns = (await User.insertMany(hashedInterns)) as IUser[];
 
     return { seniors: createdSeniors, juniors: createdJuniors, interns: createdInterns };
 }
@@ -315,14 +333,12 @@ export async function runSeed() {
         let admin = await User.findOne({ role: UserRole.ADMIN });
         if (!admin) {
             console.log("Creating Admin...");
-            const salt = await bcrypt.genSalt(10);
-            const hashedPassword = await bcrypt.hash("Admin@123", salt);
             admin = await User.create({
                 employeeId: "ADMIN01",
                 name: "System Admin",
                 email: "admin@attendance.com",
                 phone: "+15550000001",
-                password: hashedPassword,
+                password: "Admin@123",
                 role: UserRole.ADMIN,
                 officeLat: OFFICE_LAT,
                 officeLng: OFFICE_LNG,

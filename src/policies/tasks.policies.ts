@@ -18,11 +18,6 @@ export class TaskPolicy {
         TaskAction.UPDATE,
         TaskAction.DELETE,
       ],
-      /**
-       * JUNIOR covers both employee and intern positions.
-       * Interns have the same task permissions as regular juniors.
-       * Fine-grained position-based restrictions can be added here if needed.
-       */
       [UserRole.JUNIOR]: [TaskAction.READ, TaskAction.UPDATE],
       [UserRole.ADMIN]: Object.values(TaskAction),
     };

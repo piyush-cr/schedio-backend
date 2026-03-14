@@ -1,19 +1,17 @@
-  import { Router, Request, Response } from "express";
-import { z } from "zod";
+import { Router, Request, Response } from "express";
 import {
   generateToken,
   generateRefreshToken,
   verifyRefreshToken,
 } from "../utils/auth";
 import { authenticate, AuthRequest } from "../middleware/auth";
+import { validateRequest } from "../middleware/validate";
 import userCrud from "../crud/user.crud";
 import { loginSchema } from "../validations/auth.validations";
 import { logout } from "../controllers/auth.controller";
 import { authLimiter } from "../middleware/rateLimiter";
 
 const router = Router();
-
-
 
 /**
  * @swagger
@@ -81,15 +79,13 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post("/login", authLimiter, async (req: Request, res: Response) => {
+router.post("/login", authLimiter, validateRequest({ body: loginSchema }), async (req: Request, res: Response) => {
   try {
-    const validatedData = loginSchema.parse(req.body);
-    console.log(validatedData)
     const user = await userCrud.validatePassword(
-      validatedData.email,
-      validatedData.password
+      req.body.email,
+      req.body.password
     );
-    console.log(user)
+    console.log("userdata",user)
 
     if (!user) {
       return res.status(401).json({
@@ -134,14 +130,6 @@ router.post("/login", authLimiter, async (req: Request, res: Response) => {
         },
       });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        message: "Validation error",
-        errors: error.errors,
-      });
-    }
-
     console.error("Login error:", error);
     return res.status(500).json({
       success: false,
@@ -296,8 +284,9 @@ router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
         message: "User not found",
       });
     }
-
-    const userObj = user.toObject();
+console.log(user)
+    const userObj=user
+    //@ts-ignore
     delete userObj.password;
 
     return res.json({

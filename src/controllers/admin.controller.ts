@@ -2,28 +2,22 @@ import mongoose from "mongoose";
 import { Response } from "express";
 import { AuthRequest } from "../middleware/auth";
 import adminService from "../services/admin.service";
-import {
-  changePasswordSchema,
-  createUserSchema,
-  updateUserSchema,
-} from "../validations/user.validations";
 import { ApiError } from "../utils/ApiError";
 
 export async function createUser(req: AuthRequest, res: Response) {
-
   const adminId = req.user!.userId;
   if (!adminId) {
     throw new ApiError("Unauthorized", 401);
   }
-  const data = createUserSchema.parse(req.body);
-  if (data.role === "ADMIN") {
+
+  if (req.body.role === "ADMIN") {
     return res.status(403).json({
       success: false,
       message: "Creating an Admin user is not allowed"
     });
   }
 
-  const user = await adminService.createUserByAdmin(adminId, data);
+  const user = await adminService.createUserByAdmin(adminId, req.body);
   if (!user.success) {
     return res.status(400).json({
       success: user.success,
@@ -35,7 +29,8 @@ export async function createUser(req: AuthRequest, res: Response) {
   return res.status(201).json({
     success: true,
     message: "User created",
-    data: user,
+    data: user.user,
+    tempPassword: user.tempPassword,
   });
 }
 
@@ -44,7 +39,7 @@ export async function changeUserPassword(req: AuthRequest, res: Response) {
   try {
     const adminId = req.user!.userId;
     const { userId } = req.params;
-    const { password } = changePasswordSchema.parse(req.body);
+    const { password } = req.body;
 
     if (adminId === userId) {
       return res.status(403).json({
@@ -72,8 +67,6 @@ export async function updateUser(req: AuthRequest, res: Response) {
     const adminId = req.user!.userId;
     const { userId } = req.params;
 
-    // role changes to ADMIN are blocked inside createUserSchema's role enum,
-    // but also guard here defensively.
     if (req.body.role === "ADMIN") {
       return res.status(403).json({
         success: false,
@@ -81,11 +74,10 @@ export async function updateUser(req: AuthRequest, res: Response) {
       });
     }
 
-    const validatedUpdates = updateUserSchema.parse(req.body);
     const user = await adminService.updateUserByAdmin(
       adminId,
       userId,
-      validatedUpdates
+      req.body
     );
 
     return res.json({

@@ -8,10 +8,6 @@ export interface LoginResult {
   refresh_token: string;
 }
 
-/**
- * Validate credentials and return signed tokens.
- * Works for every UserRole including INTERN.
- */
 async function login(email: string, password: string): Promise<LoginResult> {
   const user = await userCrud.validatePassword(email, password);
   if (!user) {

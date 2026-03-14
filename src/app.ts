@@ -14,12 +14,11 @@ import morgan from "morgan";
 import { logger } from "./utils/logger";
 import { ApiError } from "./utils/ApiError";
 import helmet from "helmet";
-import { generalLimiter } from "./middleware/rateLimiter";
+import compression from "compression";
 
 const app = express();
 
 app.use(helmet());
-// app.use(generalLimiter); // Apply rate limiting globaly
 app.use(cookieParser());
 app.use(cors({
     origin: "http://localhost:4000",
@@ -27,6 +26,7 @@ app.use(cors({
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
 }));
+app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
@@ -39,31 +39,6 @@ app.use(
     })
 );
 
-/**
- * @swagger
- * /health:
- *   get:
- *     summary: Health check endpoint
- *     tags: [Health]
- *     responses:
- *       200:
- *         description: Server is running
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: "Server is running"
- *                 timestamp:
- *                   type: string
- *                   format: date-time
- *                   example: "2024-01-01T00:00:00.000Z"
- */
 app.get("/health", (_req: Request, res: Response) => {
     res.status(200).json({
         success: true,
@@ -94,7 +69,7 @@ app.use((err: ApiError, req: Request, res: Response, _next: NextFunction) => {
         route: req.originalUrl,
         method: req.method,
         // @ts-ignore
-        user: req.user?.id || "unauthorized",
+        user: req.user?.userId || "unauthorized",
     });
 
     res.status(err.statusCode || 500).json({

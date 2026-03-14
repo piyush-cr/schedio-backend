@@ -1,19 +1,34 @@
-import { createClient } from 'redis';
+import { Redis } from '@upstash/redis';
 
+// Upstash REST – used for rate limiting and caching
+const UPSTASH_REDIS_REST_URL = process.env.UPSTASH_REDIS_REST_URL || '';
+const UPSTASH_REDIS_REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
 
-export const redisConfig = {
-    host: 'redis-17794.crce182.ap-south-1-1.ec2.cloud.redislabs.com',
-    port: 17794,
-    password: "b4E3vRPrHoiclI7ElStJIwcUvUjtfdJe"
-}
+export const upstashRedis = (UPSTASH_REDIS_REST_URL && UPSTASH_REDIS_REST_TOKEN)
+    ? new Redis({ url: UPSTASH_REDIS_REST_URL, token: UPSTASH_REDIS_REST_TOKEN })
+    : null;
 
-export const redisConnection = createClient({
-    username: 'default',
-    password: 'b4E3vRPrHoiclI7ElStJIwcUvUjtfdJe',
-    socket: {
-        host: 'redis-17794.crce182.ap-south-1-1.ec2.cloud.redislabs.com',
-        port: 17794
-    }
-});
+// BullMQ requires TCP. Use REDIS_URL, or derive from Upstash REST (same DB, TLS connection)
+const REDIS_URL = process.env.REDIS_URL;
+const derivedFromUpstash = UPSTASH_REDIS_REST_URL && UPSTASH_REDIS_REST_TOKEN
+    ? (() => {
+        try {
+            const host = new URL(UPSTASH_REDIS_REST_URL).hostname;
+            return {
+                host,
+                port: 6379,
+                password: UPSTASH_REDIS_REST_TOKEN,
+                username: 'default',
+                tls: {} as object,
+            };
+        } catch {
+            return null;
+        }
+    })()
+    : null;
 
-redisConnection.on('error', err => console.log('Redis Client Error', err));
+export const hasBullMQRedis = !!(REDIS_URL || derivedFromUpstash);
+
+export const redisConfig = REDIS_URL
+    ? { url: REDIS_URL }
+    : derivedFromUpstash;

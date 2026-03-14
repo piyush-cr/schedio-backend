@@ -8,10 +8,13 @@ const startWorker = async () => {
     try {
         logger.info("Starting standalone worker...");
 
-        // Connect to Database if needed (some jobs might need DB access)
-        await connectDB();
+        const { hasBullMQRedis } = await import('./db/redis');
+        if (!hasBullMQRedis) {
+            logger.warn("Redis not configured (set UPSTASH_REDIS_REST_URL + TOKEN, or REDIS_URL) – worker exiting");
+            process.exit(0);
+        }
 
-        // Initialize the worker
+        await connectDB();
         setupAppWorker();
 
         logger.info("Standalone worker started successfully");
