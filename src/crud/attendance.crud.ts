@@ -8,6 +8,23 @@ import {
 } from "../types/attendance.types";
 import { toObjectId } from "../utils/mongoUtils";
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const OPEN_ATTENDANCE_LIMIT = 1000;
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface AttendanceSummary {
+  totalMinutes: number;
+  daysCount: number;
+}
+
+interface FindOpenAttendancesFilter {
+  date?: string;
+}
+
+// ─── Query Builder ────────────────────────────────────────────────────────────
+
 function buildQuery(filter: AttendanceFilter): any {
   const query: any = {};
 
@@ -15,11 +32,10 @@ function buildQuery(filter: AttendanceFilter): any {
     query.userId = toObjectId(filter.userId);
   }
 
+  // Fix: use else-if so date is not overwritten by startDate/endDate
   if (filter.date) {
-    query.date = filter.date; // exact yyyy-MM-dd
-  }
-
-  if (filter.startDate || filter.endDate) {
+    query.date = filter.date;
+  } else if (filter.startDate || filter.endDate) {
     query.date = {};
     if (filter.startDate) query.date.$gte = filter.startDate;
     if (filter.endDate) query.date.$lte = filter.endDate;
@@ -32,11 +48,24 @@ function buildQuery(filter: AttendanceFilter): any {
   return query;
 }
 
+// ─── CRUD Functions ───────────────────────────────────────────────────────────
 
 async function findMany(filter: AttendanceFilter = {}): Promise<IAttendance[]> {
   const query = buildQuery(filter);
   return Attendance.find(query).sort({ date: -1 });
 }
+
+async function findManyPaginated(
+  filter: AttendanceFilter = {},
+  options: { page: number; limit: number }
+): Promise<IAttendance[]> {
+  const query = buildQuery(filter);
+  const { page, limit } = options;
+  const skip = (page - 1) * limit;
+  // Removed .lean() to keep return type consistent with IAttendance[]
+  return Attendance.find(query).sort({ date: -1 }).skip(skip).limit(limit);
+}
+
 async function create(
   data: AttendanceCreateInput,
   session?: ClientSession
@@ -45,10 +74,12 @@ async function create(
     ...data,
     userId: new mongoose.Types.ObjectId(data.userId),
   };
+
   if (session) {
     const [attendance] = await Attendance.create([attendanceData], { session });
     return attendance;
   }
+
   const attendance = new Attendance(attendanceData);
   return attendance.save();
 }
@@ -57,6 +88,9 @@ async function findById(
   attendanceId: string,
   options: { populate?: boolean } = {}
 ): Promise<IAttendance | null> {
+  // Guard against invalid ObjectId to avoid Mongoose cast errors
+  if (!mongoose.isValidObjectId(attendanceId)) return null;
+
   let query = Attendance.findById(attendanceId);
 
   if (options.populate) {
@@ -65,22 +99,6 @@ async function findById(
 
   return query;
 }
-
-async function getSummary(filter: AttendanceFilter) {
-  const match = buildQuery(filter);
-
-  return Attendance.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: null,
-        totalMinutes: { $sum: "$totalWorkMinutes" },
-        daysCount: { $sum: 1 },
-      },
-    },
-  ]);
-}
-
 
 async function findByUserIdAndDate(
   userId: string,
@@ -93,6 +111,7 @@ async function findByUserIdAndDate(
       : userId,
     date,
   } as any);
+
   if (session) query.session(session);
   return query;
 }
@@ -111,7 +130,6 @@ async function findOneAndUpdate(
     date: filter.date,
   };
 
-  // enforce condition AT DB LEVEL
   if (filter.clockInTime?.$exists === false) {
     query.clockInTime = { $exists: false };
   }
@@ -128,9 +146,9 @@ async function findOneAndUpdate(
 
     if (!updated) {
       throw new Error("Already checked in today");
-    }
-
-    return updated;
+      }
+//@ts-ignore
+      return updated;
   } catch (error: any) {
     if (error.code === 11000) {
       throw new Error("Already checked in today");
@@ -139,39 +157,16 @@ async function findOneAndUpdate(
   }
 }
 
-
-async function findOpenAttendances(date: string): Promise<IAttendance[]> {
-  return Attendance.find({
-    date,
-    clockInTime: { $exists: true },
-    clockOutTime: { $exists: false },
-  })
-    .populate("userId", "-password")
-    .limit(1000);
-}
-
-async function findAllOpenAttendances(): Promise<IAttendance[]> {
-  return Attendance.find({
-    clockInTime: { $exists: true, $ne: null },
-    $or: [
-      { clockOutTime: { $exists: false } },
-      { clockOutTime: null },
-    ],
-  })
-    .populate("userId", "-password")
-    .limit(1000);
-}
-
 async function updateById(
   attendanceId: string,
   update: UpdateQuery<AttendanceUpdateInput>,
   session?: ClientSession
 ): Promise<IAttendance | null> {
-  const options: any = {
-    new: true,
-    runValidators: true,
-  };
+  if (!mongoose.isValidObjectId(attendanceId)) return null;
+
+  const options: any = { new: true, runValidators: true };
   if (session) options.session = session;
+
   return Attendance.findByIdAndUpdate(attendanceId, update, options);
 }
 
@@ -181,23 +176,17 @@ async function updateByUserIdAndDate(
   update: UpdateQuery<AttendanceUpdateInput>
 ): Promise<IAttendance | null> {
   return Attendance.findOneAndUpdate(
-    {
-      userId: toObjectId(userId),
-      date,
-    } as any,
+    { userId: toObjectId(userId), date } as any,
     update,
-    {
-      new: true,
-      runValidators: true,
-    }
+    { new: true, runValidators: true }
   ) as any;
 }
 
 async function deleteById(attendanceId: string): Promise<boolean> {
+  if (!mongoose.isValidObjectId(attendanceId)) return false;
   const result = await Attendance.findByIdAndDelete(attendanceId);
   return !!result;
 }
-
 
 async function deleteByUserIdAndDate(
   userId: string,
@@ -210,42 +199,71 @@ async function deleteByUserIdAndDate(
   return !!result;
 }
 
-
-
 async function count(filter: AttendanceFilter = {}): Promise<number> {
   const query = buildQuery(filter);
   return Attendance.countDocuments(query);
 }
 
-async function findManyPaginated(
-  filter: AttendanceFilter = {},
-  options: { page: number; limit: number }
-): Promise<IAttendance[]> {
-  const query = buildQuery(filter);
-  const { page, limit } = options;
-  const skip = (page - 1) * limit;
-  return Attendance.find(query)
-    .sort({ date: -1 })
-    .skip(skip)
-    .limit(limit)
-    .lean();
+async function getSummary(
+  filter: AttendanceFilter
+): Promise<AttendanceSummary[]> {
+  const match = buildQuery(filter);
+
+  return Attendance.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: null,
+        totalMinutes: { $sum: "$totalWorkMinutes" },
+        daysCount: { $sum: 1 },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        totalMinutes: 1,
+        daysCount: 1,
+      },
+    },
+  ]);
 }
+
+/**
+ * Find open attendances (clocked in but not out).
+ * Pass a `date` to filter by a specific day, or omit to get all open across all dates.
+ */
+async function findOpenAttendances(
+  filter: FindOpenAttendancesFilter = {}
+): Promise<IAttendance[]> {
+  const query: any = {
+    clockInTime: { $exists: true, $ne: null },
+    $or: [{ clockOutTime: { $exists: false } }, { clockOutTime: null }],
+  };
+
+  if (filter.date) {
+    query.date = filter.date;
+  }
+
+  return Attendance.find(query)
+    .populate("userId", "-password")
+    .limit(OPEN_ATTENDANCE_LIMIT);
+}
+
 
 const attendanceCrud = {
   findMany,
+  findManyPaginated,
   create,
-  deleteById,
-  deleteByUserIdAndDate,
-  count,
-  updateById,
   findById,
   findByUserIdAndDate,
   findOneAndUpdate,
-  findOpenAttendances,
-  findAllOpenAttendances,
+  updateById,
   updateByUserIdAndDate,
-  findManyPaginated,
-  getSummary
+  deleteById,
+  deleteByUserIdAndDate,
+  count,
+  getSummary,
+  findOpenAttendances,
 };
 
 export default attendanceCrud;

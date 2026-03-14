@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: schedio-config
-  namespace: schedio
-data:
-  NODE_ENV: "production"
-  PORT: "3000"
-  # Add non-sensitive config here. Sensitive values go in Secret.

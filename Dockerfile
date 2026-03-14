@@ -9,5 +9,4 @@ RUN bun run build
 
 EXPOSE 3000
 
-# Default: run API server. Override in k8s worker deployment with: ["bun", "run", "worker"]
 CMD ["bun", "run", "start"]

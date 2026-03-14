@@ -108,23 +108,19 @@ const uploadCheckInImage = async (job: Job) => {
     const { userId, attendanceId, localFilePath, date } = job.data;
 
     try {
-        // Import utilities dynamically
         const { getFileUrl } = await import('../../utils/fileUpload');
         const attendanceCrud = (await import('../../crud/attendance.crud')).default;
 
-        // Upload to ImageKit (via getFileUrl)
         logger.info(`Uploading file from ${localFilePath} to ImageKit...`);
         const imageUrl = await getFileUrl(localFilePath);
         logger.info(`Upload successful, URL: ${imageUrl}`);
 
-        // Update attendance record with image URL
         await attendanceCrud.updateById(attendanceId, {
             clockInImageUrl: imageUrl
         });
 
         logger.info(`Image uploaded and attendance record updated for user ${userId} on ${date}`);
 
-        // Clean up local file after successful upload
         try {
             const { deleteLocalFile } = await import('../../utils/deleteFile');
             await deleteLocalFile(localFilePath);
