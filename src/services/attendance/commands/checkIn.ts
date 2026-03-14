@@ -29,7 +29,7 @@ export async function checkIn(input: CheckInInput): Promise<CheckInResult> {
     throw new Error("User not found");
   }
 
-  const status = calculateStatus(timestamp, user.shiftStart, "Asia/Kolkata", 15);
+  const status = calculateStatus(timestamp, user.shiftStart, "Asia/Kolkata", 20);
 
   if (user.officeLat && user.officeLng) {
     const userLocation: GeoPoint = {

@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: ghcr.io/REPLACE_ORG/schedio-backend:latest
+          image: schedio-backend:latest
           imagePullPolicy: IfNotPresent
           command: ["bun", "run", "worker"]
           envFrom:
