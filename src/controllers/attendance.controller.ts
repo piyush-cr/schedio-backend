@@ -274,6 +274,39 @@ export async function getUserAttendanceForSenior(
     }
 }
 
+async function reportGeofenceBreach(
+    req: AuthRequest,
+    res: Response
+) {
+    try {
+        const { latitude, longitude } = req.body;
+        
+        if (latitude === undefined || longitude === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: "latitude and longitude are required"
+            });
+        }
+
+        const result = await attendanceService.autoCheckoutByGeofence(
+            req.user!.userId,
+            Number(latitude),
+            Number(longitude)
+        );
+
+        return res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error: any) {
+        console.error("Geofence breach report error:", error);
+        return res.status(400).json({
+            success: false,
+            message: error.message || "Failed to process geofence breach"
+        });
+    }
+}
+
 const attendanceController = {
     checkIn,
     checkOut,
@@ -282,7 +315,8 @@ const attendanceController = {
     getTodayAttendance,
     getAttendanceByDate,
     getUsersForAttendanceView,
-    getUserAttendanceForSenior
+    getUserAttendanceForSenior,
+    reportGeofenceBreach
 }
 
 export default attendanceController

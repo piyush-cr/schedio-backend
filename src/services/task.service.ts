@@ -413,6 +413,26 @@ async function updateTask({
       throw new Error("Task not found or access denied");
     }
 
+    // Notify assigner if task status is updated
+    if (updateData.status && updated.assignedById) {
+      if (updateData.status === TaskStatus.COMPLETED || updateData.status === TaskStatus.IN_PROGRESS) {
+        const assigner = await userCrud.findById(updated.assignedById.toString());
+        const assignee = await userCrud.findById(updated.assignedToId.toString());
+        if (assigner && assigner.fcmToken) {
+           const action = updateData.status === TaskStatus.COMPLETED ? "submitted" : "accepted";
+           await queueNotification({
+             token: assigner.fcmToken,
+             title: `Task ${action}`,
+             body: `${assignee?.name || 'A user'} has ${action} the task: ${updated.title}`,
+             data: {
+               taskId: updated._id.toString(),
+               type: `TASK_${updateData.status}`
+             }
+           });
+        }
+      }
+    }
+
     // Create audit log for update
     await auditLogCrud.create(
       {

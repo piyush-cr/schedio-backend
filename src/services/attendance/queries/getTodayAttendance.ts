@@ -1,6 +1,7 @@
 import { format } from "date-fns";
 import { AttendanceStatus } from "../../../types";
 import attendanceCrud from "../../../crud/attendance.crud";
+import userCrud from "../../../crud/user.crud";
 import { formatTimeTo12Hour } from "../_shared/time";
 
 export interface TodayAttendanceResult {
@@ -13,6 +14,8 @@ export interface TodayAttendanceResult {
   clockOutImageUrl: string | null;
   status: AttendanceStatus;
   totalWorkMinutes: number;
+  officeLat: number | null;
+  officeLng: number | null;
 }
 
 /**
@@ -21,6 +24,11 @@ export interface TodayAttendanceResult {
 export async function getTodayAttendance(
   userId: string
 ): Promise<TodayAttendanceResult> {
+  const user = await userCrud.findById(userId);
+  if (!user) {
+    throw new Error("User not found");
+  }
+
   const today = format(new Date(), "yyyy-MM-dd");
 
   const attendance = await attendanceCrud.findByUserIdAndDate(userId, today);
@@ -45,12 +53,9 @@ export async function getTodayAttendance(
       ? formatTimeTo12Hour(attendance.clockOutTime)
       : null,
     clockOutImageUrl: attendance?.clockOutImageUrl || null,
-    status:
-      attendance?.status === AttendanceStatus.LATE ||
-      attendance?.status === AttendanceStatus.HALF_DAY ||
-      attendance?.status === AttendanceStatus.NOT_FULL_DAY
-        ? AttendanceStatus.PRESENT
-        : attendance?.status || AttendanceStatus.ABSENT,
+    status: attendance?.status || AttendanceStatus.ABSENT,
     totalWorkMinutes,
+    officeLat: user.officeLat ?? null,
+    officeLng: user.officeLng ?? null,
   };
 }
