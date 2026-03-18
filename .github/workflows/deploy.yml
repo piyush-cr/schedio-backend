@@ -1,57 +1,39 @@
 name: Deploy to schedioapp.in
-
 on:
   push:
     branches: [main]
   workflow_dispatch:
-
 concurrency:
   group: deploy
   cancel-in-progress: true
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-
-      - name: Install & type check
-        run: |
-          bun install --frozen-lockfile
-          bunx tsc --noEmit || true
-
+      - run: bun install --frozen-lockfile
+      - run: bunx tsc --noEmit || true
       - name: Build Docker image
         run: |
           docker build -t schedioapp-backend:latest .
           docker save schedioapp-backend:latest | gzip > /tmp/image.tar.gz
-          ls -lh /tmp/image.tar.gz
-
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
-
-      - name: Transfer image to EC2
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+      - name: Transfer image
         run: |
-          scp -o StrictHostKeyChecking=no \
-            /tmp/image.tar.gz \
+          scp -o StrictHostKeyChecking=no /tmp/image.tar.gz \
             ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/schedioapp-new.tar.gz
-
-      - name: Deploy on EC2
+      - name: Deploy
         run: |
           ssh -o StrictHostKeyChecking=no \
             ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
             "bash /opt/schedioapp/deploy-receive.sh"
-
       - name: Health check
-        run: |
-          sleep 15
-          curl -f https://api.schedioapp.in/health || exit 1
-          echo "Live at https://api.schedioapp.in"
+        run: sleep 15 && curl -f https://api.schedioapp.in/health && echo "LIVE"
