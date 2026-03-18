@@ -3,7 +3,7 @@ import { Geofence, GeoPoint, isInsideGeofence } from "../../../lib/geofencing";
 /**
  * Default office geofence radius in meters
  */
-export const DEFAULT_GEOFENCE_RADIUS = 100;
+export const DEFAULT_GEOFENCE_RADIUS = 50;
 
 /**
  * Check if a user location is inside the office geofence

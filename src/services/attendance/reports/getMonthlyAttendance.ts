@@ -33,7 +33,6 @@ export interface GetMonthlyAttendanceResult {
   absentDays: number;
   lateDays: number;
   halfDays: number;
-  notFullDays: number;
   dailyLogs: DailyLog[];
 }
 
@@ -83,7 +82,6 @@ export async function getMonthlyAttendance(
   let presentDays = 0;
   let lateDays = 0;
   let halfDays = 0;
-  let notFullDays = 0;
   let absentDays = 0;
 
   for (const day of allDays) {
@@ -120,10 +118,6 @@ export async function getMonthlyAttendance(
           presentDays++;
           halfDays++;
           break;
-        case AttendanceStatus.NOT_FULL_DAY:
-          presentDays++;
-          notFullDays++;
-          break;
         case AttendanceStatus.ABSENT:
           absentDays++;
           break;
@@ -146,12 +140,7 @@ export async function getMonthlyAttendance(
           : null,
         clockOutImageUrl: record.clockOutImageUrl || null,
         totalWorkMinutes: effectiveWorkMinutes,
-        status:
-          record.status === AttendanceStatus.LATE ||
-          record.status === AttendanceStatus.HALF_DAY ||
-          record.status === AttendanceStatus.NOT_FULL_DAY
-            ? AttendanceStatus.PRESENT
-            : record.status,
+        status: record.status,
       });
     } else {
       if (dateStr !== todayStr) {
@@ -200,7 +189,6 @@ export async function getMonthlyAttendance(
     absentDays,
     lateDays,
     halfDays,
-    notFullDays,
     dailyLogs,
   };
 }

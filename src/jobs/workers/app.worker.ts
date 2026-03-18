@@ -47,6 +47,9 @@ export const setupAppWorker = () => {
                     case 'MIDNIGHT_AUTO_CHECKOUT':
                         await processMidnightAutoCheckout(job);
                         break;
+                    case 'CHECK_SHIFT_REMINDERS':
+                        await processShiftReminders(job);
+                        break;
                     // Add more cases here
                     default:
                         logger.warn(`Unknown job type: ${job.name}`);
@@ -99,6 +102,18 @@ const processMidnightAutoCheckout = async (_job: Job) => {
         logger.info(`[MidnightAutoCheckout] Completed. Processed: ${result.processed}`);
     } catch (error) {
         logger.error('[MidnightAutoCheckout] Failed:', error);
+        throw error;
+    }
+};
+
+const processShiftReminders = async (_job: Job) => {
+    logger.info('[ShiftReminders] Starting check shift reminders job...');
+    try {
+        const { checkShiftReminders } = await import('../../services/attendance/commands/checkShiftReminders');
+        const result = await checkShiftReminders();
+        logger.info(`[ShiftReminders] Completed. Processed: ${result.processed}`);
+    } catch (error) {
+        logger.error('[ShiftReminders] Failed:', error);
         throw error;
     }
 };

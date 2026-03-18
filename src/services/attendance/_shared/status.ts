@@ -53,7 +53,8 @@ export function calculateShiftDuration(
 export function calculateStatus(
   clockInTimestamp: number,
   shiftStart?: string,
-  timezone: string = "UTC",
+  shiftEnd?: string,
+  timezone: string = "Asia/Kolkata",
   graceMinutes: number = 15
 ): AttendanceStatus {
   if (!shiftStart) {
@@ -81,9 +82,30 @@ export function calculateStatus(
     timezone
   );
   const shiftStartMinutes = shiftHour * 60 + shiftMinute;
-  const lateThreshold = shiftStartMinutes + graceMinutes;
+  
+  const duration = calculateShiftDuration(shiftStart, shiftEnd);
+  
+  let effectiveClockIn = clockInMinutes;
+  // If shift crosses midnight (e.g., 22:00 to 06:00) and clock-in is in early morning
+  // we add 1440 to clock-in minutes for accurate comparison with shiftStart
+  if (shiftStartMinutes + (duration || 480) > 1440 && clockInMinutes < shiftStartMinutes - 240) {
+      effectiveClockIn += 1440;
+  }
 
-  if (clockInMinutes <= lateThreshold) {
+  const lateThreshold = graceMinutes;
+  const halfDayThreshold = 120; // 2 hours after shift start
+
+  const clockInDelay = effectiveClockIn - shiftStartMinutes;
+
+  // Flow: PRESENT -> LATE -> HALF_DAY
+  
+  // 1. Check for HALF_DAY: User clocked in after 2 hours (120 mins)
+  if (clockInDelay > halfDayThreshold) {
+      return AttendanceStatus.HALF_DAY;
+  }
+
+  // 2. Check for LATE vs PRESENT (15-20 min grace)
+  if (clockInDelay <= lateThreshold) {
     return AttendanceStatus.PRESENT;
   } else {
     return AttendanceStatus.LATE;
@@ -122,9 +144,10 @@ export function validateCheckoutAndGetStatus(params: {
     const totalWorkMinutes = Math.floor(
       (clockOutTimestamp - clockInTimestamp) / 60000
     );
-    return totalWorkMinutes >= 240
-      ? { canCheckout: true, status: AttendanceStatus.HALF_DAY }
-      : { canCheckout: true, status: AttendanceStatus.NOT_FULL_DAY };
+    return { 
+      canCheckout: true, 
+      status: totalWorkMinutes >= 240 ? AttendanceStatus.HALF_DAY : AttendanceStatus.LATE 
+    };
   }
 
   const shiftStartMinutes = timeStringToMinutes(shiftStart);
@@ -134,9 +157,10 @@ export function validateCheckoutAndGetStatus(params: {
     const totalWorkMinutes = Math.floor(
       (clockOutTimestamp - clockInTimestamp) / 60000
     );
-    return totalWorkMinutes >= 240
-      ? { canCheckout: true, status: AttendanceStatus.HALF_DAY }
-      : { canCheckout: true, status: AttendanceStatus.NOT_FULL_DAY };
+    return { 
+      canCheckout: true, 
+      status: totalWorkMinutes >= 240 ? AttendanceStatus.HALF_DAY : AttendanceStatus.LATE 
+    };
   }
 
   const halfShiftMinutes = shiftDurationMinutes / 2;
@@ -192,7 +216,7 @@ export function validateCheckoutAndGetStatus(params: {
 
     return {
       canCheckout: false,
-      status: AttendanceStatus.NOT_FULL_DAY,
+      status: AttendanceStatus.HALF_DAY,
       errorMessage: `Cannot checkout after ${latestTimeStr}. Please contact your administrator.`,
     };
   }
@@ -200,13 +224,19 @@ export function validateCheckoutAndGetStatus(params: {
   if (checkoutMinutes < earliestCheckoutMinutes) {
     return {
       canCheckout: true,
-      status: AttendanceStatus.NOT_FULL_DAY,
+      status: AttendanceStatus.LATE,
     };
   }
 
   const halfShiftWithGrace = halfShiftMinutes - graceMinutes;
+  const fullShiftThreshold = (shiftDurationMinutes * 0.9) - graceMinutes;
 
-  if (totalWorkMinutes >= halfShiftWithGrace) {
+  if (totalWorkMinutes >= fullShiftThreshold) {
+      return {
+          canCheckout: true,
+          status: AttendanceStatus.PRESENT, // Sufficient for full day
+      };
+  } else if (totalWorkMinutes >= halfShiftWithGrace) {
     return {
       canCheckout: true,
       status: AttendanceStatus.HALF_DAY,
@@ -214,7 +244,7 @@ export function validateCheckoutAndGetStatus(params: {
   } else {
     return {
       canCheckout: true,
-      status: AttendanceStatus.NOT_FULL_DAY,
+      status: AttendanceStatus.LATE,
     };
   }
 }

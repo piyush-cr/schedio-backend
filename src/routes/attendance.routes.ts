@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../middleware/auth";
-import { requireAdmin, requireSenior, requireSeniorOrJunior } from "../middleware/rbac";
+import { requireSenior, requireSeniorOrJunior } from "../middleware/rbac";
 import { validateRequest } from "../middleware/validate";
 import { upload } from "../utils/fileUpload";
 import attendanceController from "../controllers/attendance.controller";
@@ -660,6 +660,13 @@ router.get(
   requireSenior,
   validateRequest({ params: userIdParamSchema, query: attendanceQuerySchema }),
   attendanceController.getUserAttendanceForSenior
+);
+
+router.post(
+  "/report-geofence-breach",
+  authenticate,
+  requireSeniorOrJunior,
+  attendanceController.reportGeofenceBreach
 );
 
 export default router;

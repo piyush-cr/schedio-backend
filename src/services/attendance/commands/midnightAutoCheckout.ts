@@ -61,6 +61,7 @@ export async function midnightAutoCheckout(): Promise<MidnightAutoCheckoutResult
       totalWorkMinutes,
       status: checkoutValidation.status,
       isAutoCheckOut: true,
+      clockOutImageUrl: "",
     });
   });
 

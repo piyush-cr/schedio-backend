@@ -1,132 +1,151 @@
 import { format } from "date-fns";
-import { AttendanceStatus } from "../../../types";
+import { UserRole } from "../../../types";
 import { GeoPoint, isInsideGeofence } from "../../../lib/geofencing";
 import attendanceCrud from "../../../crud/attendance.crud";
 import userCrud from "../../../crud/user.crud";
 import { validateCheckoutAndGetStatus } from "../_shared/status";
 import { DEFAULT_GEOFENCE_RADIUS } from "../_shared/geofence";
+import { queueNotification } from "../../../jobs/queues/app.queue";
+import { timeStringToMinutes, timestampToMinutesInTimezone } from "../_shared/time";
 
-export interface AutoCheckoutByGeofenceResult {
-  clockOutTime: number;
-  latitude: number;
-  longitude: number;
-  totalWorkMinutes: number;
-  status: AttendanceStatus;
+export interface GeofenceBreachResult {
+  action: "ALERT" | "CHECK_OUT" | "NONE";
+  message: string;
 }
 
 /**
- * Auto-checkout triggered when user leaves office geofence after 6 PM
+ * Handles geofence breach reported by the mobile app.
+ * 1. During shift timings: Alert admin and notify user.
+ * 2. After shift timings: Auto-checkout if user is clocked in.
  */
 export async function autoCheckoutByGeofence(
   userId: string,
   latitude: number,
   longitude: number
-): Promise<AutoCheckoutByGeofenceResult> {
+): Promise<GeofenceBreachResult> {
   const timestamp = Date.now();
   const date = format(timestamp, "yyyy-MM-dd");
-  const currentHour = new Date(timestamp).getHours();
-
-  if (currentHour < 18) {
-    throw new Error("Auto-checkout only available after 6 PM");
-  }
+  const timezone = "Asia/Kolkata";
 
   const user = await userCrud.findById(userId);
   if (!user) {
     throw new Error("User not found");
   }
 
-  if (user.officeLat && user.officeLng) {
-    const userLocation: GeoPoint = {
-      lat: latitude,
-      lng: longitude,
-    };
+  // 1. Check if user is clocked in today
+  const attendance = await attendanceCrud.findByUserIdAndDate(userId, date);
+  if (!attendance || attendance.clockOutTime) {
+    return { action: "NONE", message: "User is not currently clocked in." };
+  }
 
+  // 2. Check geofence
+  if (user.officeLat && user.officeLng) {
+    const userLocation: GeoPoint = { lat: latitude, lng: longitude };
     const officeGeofence = {
-      center: {
-        lat: user.officeLat,
-        lng: user.officeLng,
-      },
-      radius: DEFAULT_GEOFENCE_RADIUS,
+      center: { lat: user.officeLat, lng: user.officeLng },
+      radius: DEFAULT_GEOFENCE_RADIUS, // Typically 10-50m
     };
 
     if (isInsideGeofence(userLocation, officeGeofence)) {
-      throw new Error(
-        "User is still within office geofence. Cannot auto-checkout."
-      );
+      return { action: "NONE", message: "User is inside office range." };
     }
+  } else {
+    return { action: "NONE", message: "Office location not set for this user." };
   }
 
-  const { executeWithTransaction, createAuditLogEntry } = await import(
-    "../../../utils/transaction"
-  );
+  // 3. Determine if shift is ongoing
+  const currentMinutes = timestampToMinutesInTimezone(timestamp, timezone);
+  const shiftEndMinutes = user.shiftEnd ? timeStringToMinutes(user.shiftEnd) : 1080; // Default 6 PM
 
-  const result = await executeWithTransaction(async (session) => {
-    const attendance = await attendanceCrud.findByUserIdAndDate(
-      userId,
-      date,
-      session
-    );
+  const isShiftOngoing = currentMinutes <= shiftEndMinutes;
 
-    if (!attendance) {
-      throw new Error("No check-in record found for today");
+  if (isShiftOngoing) {
+    // Case A: Shift is ongoing -> Send Alerts
+    
+    // Notify User
+    if (user.fcmToken) {
+      await queueNotification({
+        token: user.fcmToken,
+        title: "Out of Range Alert",
+        body: "You have moved out of the office geofence during your shift timings.",
+        data: { type: "GEOFENCE_ALERT", userId }
+      });
     }
 
-    if (attendance.clockOutTime) {
-      throw new Error("User already checked out");
-    }
-
-    const clockInTime = attendance.clockInTime || timestamp;
-    const totalWorkMinutes = Math.floor(
-      (timestamp - clockInTime) / (1000 * 60)
-    );
-
-    const checkoutValidation = validateCheckoutAndGetStatus({
-      clockInTimestamp: clockInTime,
-      clockOutTimestamp: timestamp,
-      shiftStart: user.shiftStart,
-      shiftEnd: user.shiftEnd,
+    // Notify Admins/Seniors
+    const adminUsers = await userCrud.findMany({ 
+        role: { $in: [UserRole.ADMIN, UserRole.SENIOR] } as any,
+        teamId: user.teamId
     });
 
-    let status = checkoutValidation.status;
+    for (const admin of adminUsers) {
+      if (admin.fcmToken) {
+        await queueNotification({
+          token: admin.fcmToken,
+          title: "Employee Out of Range",
+          body: `${user.name} has moved out of the office geofence during their shift.`,
+          data: { type: "GEOFENCE_BREACH_REPORT", targetUserId: userId }
+        });
+      }
+    }
 
-    const updatedAttendance = await attendanceCrud.updateById(
-      attendance._id.toString(),
-      {
-        clockOutTime: timestamp,
-        clockOutLat: latitude,
-        clockOutLng: longitude,
-        totalWorkMinutes,
-        status,
-      },
-      session
-    );
+    return { action: "ALERT", message: "Alerts sent to user and administrators." };
+  } else {
+    // Case B: Shift has ended -> Auto Checkout
+    const { executeWithTransaction, createAuditLogEntry } = await import("../../../utils/transaction");
 
-    await createAuditLogEntry(
-      {
-        action: "AUTO_CHECK_OUT",
-        performedBy: userId,
-        targetUser: userId,
-        resource: "Attendance",
-        resourceId: attendance._id,
-        metadata: {
-          location: { latitude, longitude },
+    await executeWithTransaction(async (session) => {
+      const clockInTime = attendance.clockInTime || timestamp;
+      const totalWorkMinutes = Math.floor((timestamp - clockInTime) / (1000 * 60));
+
+      const checkoutValidation = validateCheckoutAndGetStatus({
+        clockInTimestamp: clockInTime,
+        clockOutTimestamp: timestamp,
+        shiftStart: user.shiftStart,
+        shiftEnd: user.shiftEnd,
+      });
+
+      await attendanceCrud.updateById(
+        attendance._id.toString(),
+        {
+          clockOutTime: timestamp,
+          clockOutLat: latitude,
+          clockOutLng: longitude,
           totalWorkMinutes,
-          status,
-          timestamp,
-          reason: "geofence",
+          status: checkoutValidation.status,
         },
-      },
-      session
-    );
+        session
+      );
 
-    return {
-      clockOutTime: timestamp,
-      latitude,
-      longitude,
-      totalWorkMinutes,
-      status: updatedAttendance?.status,
-    };
-  });
+      await createAuditLogEntry(
+        {
+          action: "AUTO_CHECK_OUT",
+          performedBy: userId,
+          targetUser: userId,
+          resource: "Attendance",
+          resourceId: attendance._id,
+          metadata: {
+            location: { latitude, longitude },
+            totalWorkMinutes,
+            status: checkoutValidation.status,
+            timestamp,
+            reason: "geofence_after_shift",
+          },
+        },
+        session
+      );
+    });
 
-  return result;
+    // Notify user of auto-checkout
+    if (user.fcmToken) {
+      await queueNotification({
+        token: user.fcmToken,
+        title: "Auto Check-out",
+        body: "You have been automatically checked out as you left the office range after shift timings.",
+        data: { type: "AUTO_CHECKOUT", userId }
+      });
+    }
+
+    return { action: "CHECK_OUT", message: "User auto-checked out successfully." };
+  }
 }

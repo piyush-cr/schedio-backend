@@ -5,6 +5,7 @@ import { GeoPoint, isInsideGeofence } from "../../../lib/geofencing";
 import userCrud from "../../../crud/user.crud";
 import attendanceCrud from "../../../crud/attendance.crud";
 import { calculateStatus, formatTimeTo12Hour } from "../_shared";
+import { DEFAULT_GEOFENCE_RADIUS } from "../_shared/geofence";
 import { appQueue } from "../../../jobs/queues/app.queue";
 
 export interface CheckInResult {
@@ -29,7 +30,7 @@ export async function checkIn(input: CheckInInput): Promise<CheckInResult> {
     throw new Error("User not found");
   }
 
-  const status = calculateStatus(timestamp, user.shiftStart, "Asia/Kolkata", 20);
+  const status = calculateStatus(timestamp, user.shiftStart, user.shiftEnd, "Asia/Kolkata", 20);
 
   if (user.officeLat && user.officeLng) {
     const userLocation: GeoPoint = {
@@ -42,7 +43,7 @@ export async function checkIn(input: CheckInInput): Promise<CheckInResult> {
         lat: user.officeLat,
         lng: user.officeLng,
       },
-      radius: 100,
+      radius: DEFAULT_GEOFENCE_RADIUS,
     };
 
     if (!isInsideGeofence(userLocation, officeGeofence)) {
@@ -151,12 +152,7 @@ export async function checkIn(input: CheckInInput): Promise<CheckInResult> {
     latitude,
     longitude,
     clockInImageUrl: attendance?.clockInImageUrl || null,
-    status:
-      attendance?.status === AttendanceStatus.LATE ||
-      attendance?.status === AttendanceStatus.HALF_DAY ||
-      attendance?.status === AttendanceStatus.NOT_FULL_DAY
-        ? AttendanceStatus.PRESENT
-        : attendance?.status,
+    status: attendance?.status || status,
     totalHoursThisWeek: Math.round(totalHoursThisWeek * 100) / 100,
   };
 }

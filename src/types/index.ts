@@ -17,7 +17,6 @@ export enum AttendanceStatus {
   ABSENT = 'ABSENT',
   LATE = 'LATE',
   HALF_DAY = 'HALF_DAY',
-  NOT_FULL_DAY = 'NOT_FULL_DAY'
 }
 
 export enum Priority {

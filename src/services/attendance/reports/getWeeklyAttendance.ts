@@ -14,7 +14,6 @@ export interface WeeklyAttendanceCounts {
   lateDays: number;
   halfDays: number;
   absentDays: number;
-  notFullDays: number;
 }
 
 export interface DailyLog {
@@ -80,7 +79,6 @@ export async function getWeeklyAttendance(
   let lateDays = 0;
   let halfDays = 0;
   let absentDays = 0;
-  let notFullDays = 0;
 
   for (const day of daysInRange) {
     const dateStr = format(day, "yyyy-MM-dd");
@@ -116,10 +114,6 @@ export async function getWeeklyAttendance(
           presentDays++;
           halfDays++;
           break;
-        case AttendanceStatus.NOT_FULL_DAY:
-          presentDays++;
-          notFullDays++;
-          break;
         case AttendanceStatus.ABSENT:
           absentDays++;
           break;
@@ -142,12 +136,7 @@ export async function getWeeklyAttendance(
           : null,
         clockOutImageUrl: record.clockOutImageUrl || null,
         totalWorkMinutes: displayMinutes,
-        status:
-          record.status === AttendanceStatus.LATE ||
-          record.status === AttendanceStatus.HALF_DAY ||
-          record.status === AttendanceStatus.NOT_FULL_DAY
-            ? AttendanceStatus.PRESENT
-            : record.status,
+        status: record.status,
       });
     } else {
       if (dateStr !== todayStr) {
@@ -193,7 +182,6 @@ export async function getWeeklyAttendance(
       lateDays,
       halfDays,
       absentDays,
-      notFullDays,
     },
     dailyLogs,
   };

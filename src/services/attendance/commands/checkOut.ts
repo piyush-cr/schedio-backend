@@ -5,6 +5,7 @@ import { GeoPoint, isInsideGeofence } from "../../../lib/geofencing";
 import userCrud from "../../../crud/user.crud";
 import attendanceCrud from "../../../crud/attendance.crud";
 import { validateCheckoutAndGetStatus, formatTimeTo12Hour } from "../_shared";
+import { DEFAULT_GEOFENCE_RADIUS } from "../_shared/geofence";
 import { appQueue } from "../../../jobs/queues/app.queue";
 
 export interface CheckOutResult {
@@ -48,7 +49,7 @@ export async function checkOut(input: CheckOutInput): Promise<CheckOutResult> {
         lat: user.officeLat,
         lng: user.officeLng,
       },
-      radius: 100,
+      radius: DEFAULT_GEOFENCE_RADIUS,
     };
 
     const userTimezone = "Asia/Kolkata";
@@ -62,7 +63,7 @@ export async function checkOut(input: CheckOutInput): Promise<CheckOutResult> {
     if (!isInsideGeofence(userLocation, officeGeofence)) {
       if (currentHour < 18) {
         throw new Error(
-          "You are outside the office geofence (100m radius)"
+          `You are outside the office geofence (${DEFAULT_GEOFENCE_RADIUS}m radius)`
         );
       }
     }
@@ -102,7 +103,7 @@ export async function checkOut(input: CheckOutInput): Promise<CheckOutResult> {
     if (!checkoutValidation.canCheckout) {
       throw new Error(
         checkoutValidation.errorMessage ||
-          "Checkout not allowed at this time."
+        "Checkout not allowed at this time."
       );
     }
 
@@ -186,14 +187,9 @@ export async function checkOut(input: CheckOutInput): Promise<CheckOutResult> {
       latitude: latitude,
       longitude: longitude,
       totalWorkMinutes,
-      status:
-        updatedAttendance?.status === AttendanceStatus.LATE ||
-        updatedAttendance?.status === AttendanceStatus.HALF_DAY ||
-        updatedAttendance?.status === AttendanceStatus.NOT_FULL_DAY
-          ? AttendanceStatus.PRESENT
-          : updatedAttendance?.status,
+      status: updatedAttendance?.status || finalStatus,
     };
   });
-//@ts-ignore
+  //@ts-ignore
   return result;
 }
