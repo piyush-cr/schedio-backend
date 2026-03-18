@@ -1,0 +1,4 @@
+# Load test results directory
+*.json
+*.html
+*.csv

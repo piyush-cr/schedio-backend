@@ -1,0 +1,159 @@
+version: "3.9"
+
+networks:
+  app:
+    driver: bridge
+
+volumes:
+  mongo1_data:
+  mongo2_data:
+  mongo3_data:
+
+services:
+
+  mongo1:
+    image: mongo:7
+    container_name: mongo1
+    restart: always
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo1_data:/data/db
+    networks:
+      - app
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  mongo2:
+    image: mongo:7
+    container_name: mongo2
+    restart: always
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
+    volumes:
+      - mongo2_data:/data/db
+    networks:
+      - app
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  mongo3:
+    image: mongo:7
+    container_name: mongo3
+    restart: always
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
+    volumes:
+      - mongo3_data:/data/db
+    networks:
+      - app
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  mongo-init:
+    image: mongo:7
+    container_name: mongo-init
+    restart: "no"
+    depends_on:
+      mongo1:
+        condition: service_healthy
+      mongo2:
+        condition: service_healthy
+      mongo3:
+        condition: service_healthy
+    networks:
+      - app
+    command: >
+      mongosh --host mongo1:27017 --eval '
+        try {
+          rs.status();
+          print("Replica set already initialized");
+        } catch(e) {
+          rs.initiate({
+            _id: "rs0",
+            members: [
+              { _id: 0, host: "mongo1:27017", priority: 2 },
+              { _id: 1, host: "mongo2:27017", priority: 1 },
+              { _id: 2, host: "mongo3:27017", priority: 1 }
+            ]
+          });
+          sleep(3000);
+          print("Replica set initialized");
+        }
+      '
+
+  backend:
+    image: schedioapp-backend:latest
+    container_name: backend
+    restart: always
+    command: bun run start
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      MONGODB_URI: mongodb://mongo1:27017,mongo2:27017,mongo3:27017/attendance_db?replicaSet=rs0
+      NODE_ENV: production
+    networks:
+      - app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker:
+    image: schedioapp-backend:latest
+    container_name: worker
+    restart: always
+    command: bun run worker
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      MONGODB_URI: mongodb://mongo1:27017,mongo2:27017,mongo3:27017/attendance_db?replicaSet=rs0
+      NODE_ENV: production
+    networks:
+      - app
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"

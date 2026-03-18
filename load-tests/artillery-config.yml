@@ -1,0 +1,225 @@
+{
+  "config": {
+    "target": "http://localhost:3000",
+    "phases": [
+      {
+        "duration": 30,
+        "arrivalRate": 5,
+        "name": "Warm up"
+      },
+      {
+        "duration": 60,
+        "arrivalRate": 20,
+        "name": "Normal load"
+      },
+      {
+        "duration": 120,
+        "arrivalRate": 50,
+        "name": "High load"
+      },
+      {
+        "duration": 60,
+        "arrivalRate": 100,
+        "name": "Stress test"
+      },
+      {
+        "duration": 30,
+        "arrivalRate": 200,
+        "name": "Breakpoint test"
+      },
+      {
+        "duration": 30,
+        "arrivalRate": 500,
+        "name": "Spike test"
+      }
+    ],
+    "defaults": {
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    "variables": {
+      "email": "test@example.com",
+      "password": "testpassword123"
+    }
+  },
+  "before": [
+    {
+      "function": "logTestStart"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "Health check",
+      "weight": 10,
+      "flow": [
+        {
+          "get": {
+            "url": "/health",
+            "capture": [
+              {
+                "json": "$.success",
+                "as": "health_success"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Authentication flow",
+      "weight": 30,
+      "flow": [
+        {
+          "post": {
+            "url": "/api/auth/login",
+            "json": {
+              "email": "{{ email }}",
+              "password": "{{ password }}"
+            },
+            "capture": [
+              {
+                "json": "$.data.access_token",
+                "as": "access_token"
+              },
+              {
+                "json": "$.success",
+                "as": "login_success"
+              }
+            ]
+          }
+        },
+        {
+          "get": {
+            "url": "/api/auth/me",
+            "headers": {
+              "Authorization": "Bearer {{ access_token }}"
+            },
+            "capture": [
+              {
+                "json": "$.success",
+                "as": "me_success"
+              }
+            ]
+          }
+        },
+        {
+          "get": {
+            "url": "/api/attendance/weekly",
+            "headers": {
+              "Authorization": "Bearer {{ access_token }}"
+            }
+          }
+        },
+        {
+          "get": {
+            "url": "/api/attendance/today",
+            "headers": {
+              "Authorization": "Bearer {{ access_token }}"
+            }
+          }
+        },
+        {
+          "get": {
+            "url": "/api/tasks?page=1&limit=10",
+            "headers": {
+              "Authorization": "Bearer {{ access_token }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Attendance endpoints",
+      "weight": 40,
+      "flow": [
+        {
+          "post": {
+            "url": "/api/auth/login",
+            "json": {
+              "email": "{{ email }}",
+              "password": "{{ password }}"
+            },
+            "capture": [
+              {
+                "json": "$.data.access_token",
+                "as": "access_token"
+              }
+            ]
+          }
+        },
+        {
+          "get": {
+            "url": "/api/attendance/monthly?month=1&year=2024",
+            "headers": {
+              "Authorization": "Bearer {{ access_token }}"
+            }
+          }
+        },
+        {
+          "get": {
+            "url": "/api/attendance/day?date=2024-01-15",
+            "headers": {
+              "Authorization": "Bearer {{ access_token }}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Task endpoints",
+      "weight": 20,
+      "flow": [
+        {
+          "post": {
+            "url": "/api/auth/login",
+            "json": {
+              "email": "{{ email }}",
+              "password": "{{ password }}"
+            },
+            "capture": [
+              {
+                "json": "$.data.access_token",
+                "as": "access_token"
+              }
+            ]
+          }
+        },
+        {
+          "get": {
+            "url": "/api/tasks?page=1&limit=20",
+            "headers": {
+              "Authorization": "Bearer {{ access_token }}"
+            }
+          }
+        },
+        {
+          "get": {
+            "url": "/api/tasks/65a1f2b9e3c8f2a1a1234567",
+            "headers": {
+              "Authorization": "Bearer {{ access_token }}"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "plugins": {
+    "ensure": {
+      "thresholds": [
+        {
+          "condition": "p95 < 500",
+          "message": "P95 response time should be less than 500ms"
+        },
+        {
+          "condition": "errorRate < 1",
+          "message": "Error rate should be less than 1%"
+        }
+      ]
+    },
+    "apdex": {
+      "tolerant": 500,
+      "target": 200
+    }
+  }
+}

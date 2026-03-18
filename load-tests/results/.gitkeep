@@ -1,0 +1,30 @@
+# Load Test Results Directory
+
+This directory stores load test results and reports.
+
+## Files Generated
+
+- `summary.json` - k6 test summary
+- `report.html` - Artillery HTML report
+- `results-*.json` - Node.js load test results
+
+## Viewing Results
+
+### k6 Results
+```bash
+cat results/summary.json
+```
+
+### Artillery HTML Report
+```bash
+# Open in browser
+start results/report.html  # Windows
+open results/report.html   # Mac
+xdg-open results/report.html  # Linux
+```
+
+### Node.js Load Test
+Results are displayed in console and saved to:
+```bash
+cat results/node-load-test-*.json
+```
