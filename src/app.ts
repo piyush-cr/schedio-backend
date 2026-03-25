@@ -21,7 +21,7 @@ const app = express();
 app.use(helmet());
 app.use(cookieParser());
 app.use(cors({
-    origin: "http://localhost:4000",
+    origin: "https://attendance-app-fontend.vercel.app",
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
