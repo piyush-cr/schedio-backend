@@ -11,33 +11,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun install --frozen-lockfile
-      - run: bunx tsc --noEmit || true
-      - name: Build Docker image
-        run: |
-          docker build -t schedioapp-backend:latest .
-          docker save schedioapp-backend:latest | gzip > /tmp/image.tar.gz
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
           printf '%s' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-      - name: Transfer image
-        run: |
-          scp -i ~/.ssh/id_rsa \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            /tmp/image.tar.gz \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/schedioapp-new.tar.gz
       - name: Deploy
         run: |
           ssh -i ~/.ssh/id_rsa \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
             ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
-            "bash /opt/schedioapp/deploy-receive.sh"
+            "cd /opt/schedioapp/app && \
+             git pull origin main && \
+             docker build -t schedioapp-backend:latest . && \
+             docker-compose -f /opt/schedioapp/docker-compose.prod.yml up -d --no-deps --force-recreate backend worker && \
+             echo DEPLOY_DONE"
       - name: Health check
-        run: sleep 15 && curl -f https://api.schedioapp.in/health && echo "LIVE"
+        run: sleep 20 && curl -f https://api.schedioapp.in/health && echo "LIVE"
