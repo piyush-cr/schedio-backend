@@ -1,18 +1,21 @@
 import { format } from "date-fns";
 import attendanceCrud from "../../../crud/attendance.crud";
 import userCrud from "../../../crud/user.crud";
-import { validateCheckoutAndGetStatus } from "../_shared/status";
+// import { validateCheckoutAndGetStatus } from "../_shared/status";
 import { timeStringToMinutes, timestampToMinutesInTimezone } from "../_shared/time";
+import { logger } from "../../../utils/logger";
 
-export interface AutoCheckoutResult {
+export interface AutoCheckoutByShiftResult {
   processed: number;
 }
 
 /**
- * Auto-checkout for open attendances whose shift has ended.
- * Runs periodically (every 30 min via node-cron) and checks per-user shiftEnd.
+ * Auto-checkout for users with a specific shift end time.
+ * Filters users by their shiftEnd time and auto-checks them out if they haven't checked out yet.
+ * 
+ * @param targetShiftEnd - The shift end time to filter users (e.g., "18:00" for 6 PM, "20:00" for 8 PM)
  */
-export async function autoCheckout(): Promise<AutoCheckoutResult> {
+export async function autoCheckoutByShift(targetShiftEnd: string): Promise<AutoCheckoutByShiftResult> {
   const today = format(new Date(), "yyyy-MM-dd");
   const timezone = "Asia/Kolkata";
   const now = Date.now();
@@ -20,6 +23,7 @@ export async function autoCheckout(): Promise<AutoCheckoutResult> {
   const openAttendances = await attendanceCrud.findOpenAttendances({ date: today });
 
   if (openAttendances.length === 0) {
+    logger.info(`[AutoCheckoutByShift] No open attendances found for ${today}`);
     return { processed: 0 };
   }
 
@@ -48,41 +52,40 @@ export async function autoCheckout(): Promise<AutoCheckoutResult> {
       }
     }
 
-    // Per-user shift check: skip if shift not over yet
-    const shiftEndMinutes = shiftEnd
-      ? timeStringToMinutes(shiftEnd)
-      : 1080; // default 18:00
+    // Skip if user doesn't have shiftEnd defined or doesn't match target shift
+    if (!shiftEnd || shiftEnd !== targetShiftEnd) {
+      return;
+    }
+
+    // Verify shift has ended
+    const shiftEndMinutes = timeStringToMinutes(shiftEnd);
     const currentMinutes = timestampToMinutesInTimezone(now, timezone);
 
     if (currentMinutes < shiftEndMinutes) {
-      return; // shift not over for this user, skip
+      logger.info(`[AutoCheckoutByShift] Shift not yet ended for user with shiftEnd ${shiftEnd}`);
+      return;
     }
 
     const totalWorkMinutes = Math.floor(
       (clockOutTime - (attendance.clockInTime || clockOutTime)) / (1000 * 60)
     );
 
-    const checkoutValidation = validateCheckoutAndGetStatus({
-      clockInTimestamp: attendance.clockInTime || clockOutTime,
-      clockOutTimestamp: clockOutTime,
-      shiftStart,
-      shiftEnd,
-    });
 
     await attendanceCrud.updateById(attendance._id.toString(), {
       clockOutTime,
       totalWorkMinutes,
-      status: checkoutValidation.status,
       isAutoCheckOut: true,
+      clockOutImageUrl: attendance.clockInImageUrl,
     });
 
     processedCount++;
+    logger.info(`[AutoCheckoutByShift] Auto-checked out user ${attendance.userId} with shiftEnd ${shiftEnd}`);
   });
 
   await Promise.all(updates);
 
-  console.log(
-    `[AutoCheckout] Processed ${processedCount} auto-checkouts`
+  logger.info(
+    `[AutoCheckoutByShift] Processed ${processedCount} auto-checkouts for shiftEnd ${targetShiftEnd}`
   );
   return { processed: processedCount };
 }

@@ -11,55 +11,58 @@ const imagekit = new ImageKit({
 });
 
 export const uploadFile = async (fileUrlLocal: string) => {
-    try {
-        if (!process.env.IMAGEKIT_PUBLIC_KEY || !process.env.IMAGEKIT_PRIVATE_KEY || !process.env.IMAGEKIT_URL_ENDPOINT) {
-            console.error("ImageKit configuration missing");
-            return { success: false, error: "ImageKit configuration is missing" };
-        }
+    if (!process.env.IMAGEKIT_PUBLIC_KEY || !process.env.IMAGEKIT_PRIVATE_KEY || !process.env.IMAGEKIT_URL_ENDPOINT) {
+        throw new Error("ImageKit configuration missing");
+    }
 
+    try {
         const fileName = path.basename(fileUrlLocal);
-        const stats = fs.statSync(fileUrlLocal);
-        const fileSizeInBytes = stats.size;
-        const fileSizeInMegabytes = fileSizeInBytes / (1024 * 1024);
+
+        const stats = await fs.promises.stat(fileUrlLocal);
+        const fileSizeMB = stats.size / (1024 * 1024);
+
+        let transformer = sharp(fileUrlLocal).rotate();
+        let metadata = await transformer.metadata();
+
+        // ✅ Resize only if too large
+        if (metadata.width && metadata.width > 1600) {
+            transformer = transformer.resize({ width: 1600 });
+        }
 
         let fileContent: Buffer;
 
-        if (fileSizeInMegabytes > 5) {
-            console.log(`Compressing file as it exceeds 5MB: ${fileName} (${fileSizeInMegabytes.toFixed(2)}MB)`);
-            fileContent = await sharp(fileUrlLocal)
-                .rotate() // Auto-rotate based on EXIF data
-                .resize({ width: 2000, withoutEnlargement: true }) // Reasonable maximum width
-                .jpeg({ quality: 80, mozjpeg: true }) // High efficiency compression
-                .toBuffer();
-            console.log(`Compressed size: ${(fileContent.length / (1024 * 1024)).toFixed(2)}MB`);
+        if (fileSizeMB > 5) {
+            console.log(`Compressing ${fileName} (${fileSizeMB.toFixed(2)}MB)`);
+
+            // ✅ Format-aware compression
+            if (metadata.format === "png") {
+                fileContent = await transformer
+                    .png({ compressionLevel: 9, palette: true })
+                    .toBuffer();
+            } else {
+                fileContent = await transformer
+                    .jpeg({ quality: 75, mozjpeg: true })
+                    .toBuffer();
+            }
+
+            console.log(`Compressed: ${(fileContent.length / (1024 * 1024)).toFixed(2)}MB`);
         } else {
-            fileContent = fs.readFileSync(fileUrlLocal);
+            fileContent = await fs.promises.readFile(fileUrlLocal);
         }
 
         const response = await imagekit.upload({
-            file: fileContent, // required
-            fileName: fileName, // required
-            // You can specify folder if needed
-            folder: "checkin-images"
+            file: fileContent,
+            fileName,
+            folder: "checkin-images",
         });
 
-        console.log("ImageKit upload successful:", response.fileId);
-
         return {
-            success: true,
             url: response.url,
-            secure_url: response.url, // ImageKit returns 'url' which is HTTPS by default usually, but we match Cloudinary interface
             fileId: response.fileId,
-            error: null
         };
 
     } catch (error: any) {
         console.error("ImageKit upload error:", error);
-        return {
-            success: false,
-            error: error.message || "Unknown ImageKit error",
-            url: null,
-            secure_url: null
-        };
+        throw new Error(error.message || "Image upload failed");
     }
 };

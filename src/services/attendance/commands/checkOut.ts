@@ -6,7 +6,9 @@ import userCrud from "../../../crud/user.crud";
 import attendanceCrud from "../../../crud/attendance.crud";
 import { validateCheckoutAndGetStatus, formatTimeTo12Hour } from "../_shared";
 import { DEFAULT_GEOFENCE_RADIUS } from "../_shared/geofence";
-import { appQueue } from "../../../jobs/queues/app.queue";
+// import { appQueue } from "../../../jobs/queues/app.queue";
+import { timeStringToMinutes, timestampToMinutesInTimezone } from "../_shared/time";
+import { uploadFile } from "../../../utils/imagekit";
 
 export interface CheckOutResult {
   clockOutTime: string;
@@ -52,16 +54,12 @@ export async function checkOut(input: CheckOutInput): Promise<CheckOutResult> {
       radius: DEFAULT_GEOFENCE_RADIUS,
     };
 
-    const userTimezone = "Asia/Kolkata";
-    const currentHourInUserTZ = new Date(timestamp).toLocaleString("en-US", {
-      timeZone: userTimezone,
-      hour: "numeric",
-      hour12: false,
-    });
-    const currentHour = parseInt(currentHourInUserTZ);
-
     if (!isInsideGeofence(userLocation, officeGeofence)) {
-      if (currentHour < 18) {
+      const shiftEndMinutes = user.shiftEnd
+        ? timeStringToMinutes(user.shiftEnd)
+        : 1080; // default 18:00
+      const currentMinutes = timestampToMinutesInTimezone(timestamp, "Asia/Kolkata");
+      if (currentMinutes < shiftEndMinutes) {
         throw new Error(
           `You are outside the office geofence (${DEFAULT_GEOFENCE_RADIUS}m radius)`
         );
@@ -115,6 +113,7 @@ export async function checkOut(input: CheckOutInput): Promise<CheckOutResult> {
     ) {
       finalStatus = AttendanceStatus.HALF_DAY;
     }
+    const imageUrl = await uploadFile(localFilePath!)
 
     const updatedAttendance = await attendanceCrud.updateById(
       attendance._id.toString(),
@@ -122,48 +121,47 @@ export async function checkOut(input: CheckOutInput): Promise<CheckOutResult> {
         clockOutTime: timestamp,
         clockOutLat: latitude,
         clockOutLng: longitude,
-        clockOutImageUrl: "",
+        clockOutImageUrl: imageUrl.url,
         totalWorkMinutes,
-        status: finalStatus,
       },
       session
     );
 
-    if (updatedAttendance && localFilePath) {
-      await appQueue
-        .add("UPLOAD_CHECKOUT_IMAGE", {
-          userId,
-          attendanceId: updatedAttendance._id.toString(),
-          localFilePath,
-          date,
-        })
-        .catch((err) =>
-          console.error("Failed to queue checkout image upload job:", err)
-        );
-    }
+    // if (updatedAttendance && localFilePath) {
+    //   await appQueue
+    //     .add("UPLOAD_CHECKOUT_IMAGE", {
+    //       userId,
+    //       attendanceId: updatedAttendance._id.toString(),
+    //       localFilePath,
+    //       date,
+    //     })
+    //     .catch((err) =>
+    //       console.error("Failed to queue checkout image upload job:", err)
+    //     );
+    // }
 
-    await appQueue
-      .add("SEND_ATTENDANCE_NOTIFICATION", {
-        userId,
-        type: "CHECK_OUT",
-        data: {
-          userName: user.name,
-          timestamp,
-          status: updatedAttendance?.status,
-          totalWorkMinutes,
-        },
-      })
-      .catch((err) => console.error("Failed to queue notification job:", err));
+    // await appQueue
+    //   .add("SEND_ATTENDANCE_NOTIFICATION", {
+    //     userId,
+    //     type: "CHECK_OUT",
+    //     data: {
+    //       userName: user.name,
+    //       timestamp,
+    //       status: updatedAttendance?.status,
+    //       totalWorkMinutes,
+    //     },
+    //   })
+    //   .catch((err) => console.error("Failed to queue notification job:", err));
 
-    await appQueue
-      .add("CALCULATE_ATTENDANCE_STATS", {
-        userId,
-        date,
-        types: ["DAILY", "WEEKLY", "MONTHLY"],
-      })
-      .catch((err) =>
-        console.error("Failed to queue stats calculation job:", err)
-      );
+    // await appQueue
+    //   .add("CALCULATE_ATTENDANCE_STATS", {
+    //     userId,
+    //     date,
+    //     types: ["DAILY", "WEEKLY", "MONTHLY"],
+    //   })
+    //   .catch((err) =>
+    //     console.error("Failed to queue stats calculation job:", err)
+    //   );
 
     await createAuditLogEntry(
       {

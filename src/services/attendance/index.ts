@@ -5,6 +5,7 @@ import { getTodayAttendance } from "./queries/getTodayAttendance";
 import { autoCheckout } from "./commands/autoCheckout";
 import { midnightAutoCheckout } from "./commands/midnightAutoCheckout";
 import { autoCheckoutByGeofence } from "./commands/autoCheckoutByGeofence";
+import { clearGeofenceBreach } from "./commands/autoCheckoutByGeofence";
 import { getMonthlyAttendance } from "./reports/getMonthlyAttendance";
 import { getAttendanceByDate } from "./queries/getAttendanceByDate";
 import { getUserAttendanceForSenior } from "./admin/getUserAttendanceForSenior";
@@ -19,6 +20,7 @@ const attendanceService = {
   autoCheckout,
   midnightAutoCheckout,
   autoCheckoutByGeofence,
+  clearGeofenceBreach,
   getMonthlyAttendance,
   getAttendanceByDate,
   getUserAttendanceForSenior,
@@ -36,6 +38,7 @@ export {
   autoCheckout,
   midnightAutoCheckout,
   autoCheckoutByGeofence,
+  clearGeofenceBreach,
   getMonthlyAttendance,
   getAttendanceByDate,
   getUserAttendanceForSenior,

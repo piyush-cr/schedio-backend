@@ -6,6 +6,7 @@ import { UserRole } from "../types";
 import { logout } from "../controllers/auth.controller";
 import attendanceCrud from "../crud/attendance.crud";
 import { format } from "date-fns";
+import { sendNotification } from "../firebase/messaging";
 
 const router = Router();
 
@@ -396,6 +397,48 @@ router.post(
       return res.status(500).json({
         success: false,
         message: "Internal server error",
+      });
+    }
+  }
+);
+
+/**
+ * POST /api/users/test-notification
+ * Test FCM notification to current user
+ */
+router.post(
+  "/test-notification",
+  authenticate,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const user = await userCrud.findById(req.user!.userId);
+      
+      if (!user || !user.fcmToken) {
+        return res.status(400).json({
+          success: false,
+          message: "FCM token not found for this user",
+        });
+      }
+
+      await sendNotification({
+        token: user.fcmToken,
+        title: "Test Notification",
+        body: "FCM is working correctly! 🎉",
+        data: {
+          type: "TEST_NOTIFICATION",
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: "Notification sent successfully",
+      });
+    } catch (error) {
+      console.error("Test notification error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to send notification",
       });
     }
   }

@@ -72,6 +72,8 @@ export type AttendanceUpdateInput = {
   clockOutImageUrl?: string;
   totalWorkMinutes?: number;
   status?: AttendanceStatus;
+  isAutoCheckOut?: boolean;
+  geofenceBreachTime?: number | null;
 };
 
 export interface CheckInInput {

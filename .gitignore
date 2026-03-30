@@ -11,9 +11,5 @@ uploads/
 *.jpeg
 *.png
 
-<<<<<<< HEAD
-.env
-.env.*
-=======
->>>>>>> 725348a6113e2ee07f011709771f46fb09d2e6be
+schedio-3f6ee-firebase-adminsdk-fbsvc-587ca433a3.json
 db/

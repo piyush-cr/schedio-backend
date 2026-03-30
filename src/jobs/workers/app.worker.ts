@@ -50,6 +50,12 @@ export const setupAppWorker = () => {
                     case 'CHECK_SHIFT_REMINDERS':
                         await processShiftReminders(job);
                         break;
+                    case 'AUTO_CHECKOUT':
+                        await processAutoCheckout(job);
+                        break;
+                    case 'GEOFENCE_DELAYED_CHECKOUT':
+                        await processGeofenceDelayedCheckout(job);
+                        break;
                     // Add more cases here
                     default:
                         logger.warn(`Unknown job type: ${job.name}`);
@@ -61,7 +67,10 @@ export const setupAppWorker = () => {
         },
         {
             connection: redisConfig,
-            concurrency: 5,
+            concurrency: 6,
+            stalledInterval: 120000,  // Check stalled jobs every 2 min instead of 30s
+            drainDelay: 30,           // Wait 30s between polls when queue is empty (BZPOPMIN timeout)
+            lockDuration: 60000,      // Lock jobs for 60s instead of 30s
             limiter: {
                 max: 10,
                 duration: 1000,
@@ -118,7 +127,47 @@ const processShiftReminders = async (_job: Job) => {
     }
 };
 
-const uploadCheckInImage = async (job: Job) => {
+const processAutoCheckout = async (_job: Job) => {
+    logger.info('[AutoCheckout] Starting periodic auto-checkout job...');
+    try {
+        const attendanceService = (await import('../../services/attendance.service')).default;
+        const result = await attendanceService.autoCheckout();
+        logger.info(`[AutoCheckout] Completed. Processed: ${result.processed}`);
+    } catch (error) {
+        logger.error('[AutoCheckout] Failed:', error);
+        throw error;
+    }
+};
+
+const processGeofenceDelayedCheckout = async (job: Job) => {
+    logger.info('[GeofenceDelayedCheckout] Processing delayed geofence checkout...');
+    try {
+        const { userId, attendanceId, latitude, longitude } = job.data;
+        const attendanceCrud = (await import('../../crud/attendance.crud')).default;
+        const attendance = await attendanceCrud.findById(attendanceId);
+
+        if (!attendance || attendance.clockOutTime) {
+            logger.info('[GeofenceDelayedCheckout] Attendance already checked out or not found, skipping');
+            return;
+        }
+
+        // Check if breach time still exists (user did not re-enter geofence)
+        if (!attendance.geofenceBreachTime) {
+            logger.info('[GeofenceDelayedCheckout] Breach was cleared (user re-entered), skipping');
+            return;
+        }
+
+        // Execute the auto-checkout
+        const attendanceService = (await import('../../services/attendance.service')).default;
+        await attendanceService.autoCheckoutByGeofence(userId, latitude, longitude);
+        logger.info(`[GeofenceDelayedCheckout] Auto-checkout completed for user ${userId}`);
+    } catch (error) {
+        logger.error('[GeofenceDelayedCheckout] Failed:', error);
+        throw error;
+    }
+};
+
+export const uploadCheckInImage = async (job: Job) => {
     logger.info('Uploading check-in image:', job.data);
     const { userId, attendanceId, localFilePath, date } = job.data;
 
@@ -235,11 +284,12 @@ const sendPushNotification = async (job: Job) => {
 
 const calculateAttendanceStats = async (job: Job) => {
     logger.info('Calculating attendance stats:', job.data);
-    const { userId, date, type, types } = job.data as {
+    const { userId, date, type, types, skipCache } = job.data as {
         userId: string;
         date: string;
         type?: 'DAILY' | 'WEEKLY' | 'MONTHLY';
         types?: Array<'DAILY' | 'WEEKLY' | 'MONTHLY'>;
+        skipCache?: boolean;
     };
 
     try {
@@ -253,13 +303,13 @@ const calculateAttendanceStats = async (job: Job) => {
         const runType = async (t: 'DAILY' | 'WEEKLY' | 'MONTHLY') => {
             switch (t) {
                 case 'DAILY':
-                    await calculateDailyStats(userId, date, attendanceCrud);
+                    await calculateDailyStats(userId, date, attendanceCrud, skipCache);
                     return;
                 case 'WEEKLY':
-                    await calculateWeeklyStats(userId, currentDate, attendanceCrud, { format, startOfWeek, endOfWeek, AttendanceStatus });
+                    await calculateWeeklyStats(userId, currentDate, attendanceCrud, { format, startOfWeek, endOfWeek, AttendanceStatus }, skipCache);
                     return;
                 case 'MONTHLY':
-                    await calculateMonthlyStats(userId, currentDate, attendanceCrud, { format, startOfMonth, endOfMonth, AttendanceStatus });
+                    await calculateMonthlyStats(userId, currentDate, attendanceCrud, { format, startOfMonth, endOfMonth, AttendanceStatus }, skipCache);
                     return;
             }
         };
@@ -283,7 +333,7 @@ const calculateAttendanceStats = async (job: Job) => {
 };
 
 // Helper function to calculate daily stats
-const calculateDailyStats = async (userId: string, date: string, attendanceCrud: any) => {
+const calculateDailyStats = async (userId: string, date: string, attendanceCrud: any, skipCache?: boolean) => {
     const attendance = await attendanceCrud.findByUserIdAndDate(userId, date);
 
     if (!attendance) {
@@ -315,9 +365,9 @@ const calculateDailyStats = async (userId: string, date: string, attendanceCrud:
         logger.error('Failed to store daily stats in DB:', dbError);
     }
 
-    // Cache in Redis (24 hours) - Upstash REST
+    // Cache in Redis (24 hours) - Upstash REST — skip if batch job
     try {
-        if (upstashRedis) {
+        if (upstashRedis && !skipCache) {
             const redisKey = `stats:daily:${userId}:${date}`;
             await upstashRedis.set(redisKey, JSON.stringify(stats), { ex: 86400 });
             logger.info(`Daily stats cached in Redis: ${redisKey}`);
@@ -332,7 +382,8 @@ const calculateWeeklyStats = async (
     userId: string,
     currentDate: Date,
     attendanceCrud: any,
-    utils: { format: any; startOfWeek: any; endOfWeek: any; AttendanceStatus: any }
+    utils: { format: any; startOfWeek: any; endOfWeek: any; AttendanceStatus: any },
+    skipCache?: boolean
 ) => {
     const { format, startOfWeek, endOfWeek, AttendanceStatus } = utils;
 
@@ -438,9 +489,9 @@ const calculateWeeklyStats = async (
         logger.error('Failed to store weekly stats in DB:', dbError);
     }
 
-    // Cache in Redis (7 days) - Upstash REST
+    // Cache in Redis (7 days) - Upstash REST — skip if batch job
     try {
-        if (upstashRedis) {
+        if (upstashRedis && !skipCache) {
             const redisKey = `stats:weekly:${userId}:${weekStartStr}`;
             await upstashRedis.set(redisKey, JSON.stringify(weeklyStats), { ex: 604800 });
             logger.info(`Weekly stats cached in Redis: ${redisKey}`);
@@ -455,7 +506,8 @@ const calculateMonthlyStats = async (
     userId: string,
     currentDate: Date,
     attendanceCrud: any,
-    utils: { format: any; startOfMonth: any; endOfMonth: any; AttendanceStatus: any }
+    utils: { format: any; startOfMonth: any; endOfMonth: any; AttendanceStatus: any },
+    skipCache?: boolean
 ) => {
     const { format, startOfMonth, endOfMonth, AttendanceStatus } = utils;
 
@@ -555,9 +607,9 @@ const calculateMonthlyStats = async (
         logger.error('Failed to store monthly stats in DB:', dbError);
     }
 
-    // Cache in Redis (30 days) - Upstash REST
+    // Cache in Redis (30 days) - Upstash REST — skip if batch job
     try {
-        if (upstashRedis) {
+        if (upstashRedis && !skipCache) {
             const redisKey = `stats:monthly:${userId}:${monthStartStr}`;
             await upstashRedis.set(redisKey, JSON.stringify(monthlyStats), { ex: 2592000 });
             logger.info(`Monthly stats cached in Redis: ${redisKey}`);

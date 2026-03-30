@@ -90,6 +90,8 @@ export interface AttendanceRecord {
 
   totalWorkMinutes: number;
   status: AttendanceStatus;
+  isAutoCheckOut?: boolean;
+  geofenceBreachTime?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
