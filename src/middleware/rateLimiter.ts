@@ -1,86 +1,73 @@
-import { Ratelimit } from '@upstash/ratelimit';
-import { Redis } from '@upstash/redis';
-import { Request, Response, NextFunction } from 'express';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { Request, Response } from 'express';
 
-const hasUpstash = process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN;
+const getClientIp = (req: Request): string => {
+    const raw =
+        (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+        req.socket.remoteAddress ||
+        'unknown';
 
-const redis = hasUpstash
-    ? new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL!,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-    })
-    : null;
+    return raw
+        .replace(/^\[|\]$/g, '')       // strip brackets from IPv6
+        .replace(/^::ffff:/i, '');     // unwrap IPv4-mapped IPv6
+};
 
-// No-op middleware when Upstash is not configured (e.g. local dev without Redis)
-const noopLimiter = (_req: Request, _res: Response, next: NextFunction) => next();
+const createLimiter = (options: {
+    windowMs: number;
+    limit: number;
+    message: string;
+    prefix: string;
+    retryAfter: number;
+}) => {
+    const { windowMs, limit, message, retryAfter } = options;
 
-type Duration = `${number} s` | `${number} m` | `${number} h` | `${number} d`;
-
-const createUpstashLimiter = (
-    limit: number,
-    window: Duration,
-    prefix: string,
-    message: string,
-    retryAfter: number
-): ((req: Request, res: Response, next: NextFunction) => void | Promise<void>) => {
-    if (!redis) return noopLimiter;
-
-    const ratelimit = new Ratelimit({
-        redis,
-        limiter: Ratelimit.slidingWindow(limit, window),
-        prefix: `rl:${prefix}`,
-    });
-
-    return async (req: Request, res: Response, next: NextFunction) => {
-        const id = req.ip || req.socket.remoteAddress || 'unknown';
-        const { success, remaining, reset } = await ratelimit.limit(id);
-
-        res.set('RateLimit-Limit', limit.toString());
-        res.set('RateLimit-Remaining', remaining.toString());
-        res.set('RateLimit-Reset', reset.toString());
-
-        if (!success) {
-            return void res.status(429).json({
+    return rateLimit({
+        windowMs,
+        limit,
+        standardHeaders: 'draft-7',
+        legacyHeaders: false,
+        keyGenerator: getClientIp,   // no "req.ip" string inside → no ValidationError
+        handler: (_req: Request, res: Response) => {
+            res.status(429).json({
                 success: false,
                 message,
                 retryAfter,
             });
-        }
-        next();
-    };
+        },
+    });
 };
 
-export const generalLimiter = createUpstashLimiter(
-    600,
-    '15 m',
-    'general',
-    'Too many requests, please try again after 15 minutes.',
-    15 * 60
-);
+export const generalLimiter = createLimiter({
+    windowMs: 15 * 60 * 1000,
+    limit: 600,
+    prefix: 'general',
+    message: 'Too many requests, please try again after 15 minutes.',
+    retryAfter: 15 * 60,
+});
 
-export const authLimiter = createUpstashLimiter(
-    80,
-    '15 m',
-    'auth',
-    'Too many login attempts, please try again after 15 minutes.',
-    15 * 60
-);
+export const authLimiter = createLimiter({
+    windowMs: 15 * 60 * 1000,
+    limit: 80,
+    prefix: 'auth',
+    message: 'Too many login attempts, please try again after 15 minutes.',
+    retryAfter: 15 * 60,
+});
 
-export const sensitiveLimiter = createUpstashLimiter(
-    400,
-    '6 m',
-    'sensitive',
-    'Too many requests for sensitive operations, please try again after an hour.',
-    60 * 60
-);
+export const sensitiveLimiter = createLimiter({
+    windowMs: 6 * 60 * 1000,
+    limit: 400,
+    prefix: 'sensitive',
+    message: 'Too many requests for sensitive operations, please try again after an hour.',
+    retryAfter: 60 * 60,
+});
 
-export const burstLimiter = createUpstashLimiter(
-    1000,
-    '1 m',
-    'burst',
-    'Too many requests, please slow down.',
-    60
-);
+export const burstLimiter = createLimiter({
+    windowMs: 1 * 60 * 1000,
+    limit: 1000,
+    prefix: 'burst',
+    message: 'Too many requests, please slow down.',
+    retryAfter: 60,
+});
 
 export const createRateLimiter = (options: {
     windowMs: number;
@@ -88,8 +75,18 @@ export const createRateLimiter = (options: {
     message?: string;
     keyPrefix?: string;
 }) => {
-    const { windowMs, max, message = 'Too many requests', keyPrefix = 'custom' } = options;
-    const windowSec = Math.ceil(windowMs / 1000);
-    const windowStr: Duration = windowSec >= 60 ? `${Math.floor(windowSec / 60)} m` : `${windowSec} s`;
-    return createUpstashLimiter(max, windowStr, keyPrefix, message, Math.ceil(windowSec));
+    const {
+        windowMs,
+        max,
+        message = 'Too many requests',
+        keyPrefix = 'custom',
+    } = options;
+
+    return createLimiter({
+        windowMs,
+        limit: max,
+        prefix: keyPrefix,
+        message,
+        retryAfter: Math.ceil(windowMs / 1000),
+    });
 };

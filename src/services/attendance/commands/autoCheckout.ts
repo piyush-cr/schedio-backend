@@ -23,10 +23,9 @@ export async function autoCheckout(): Promise<AutoCheckoutResult> {
     return { processed: 0 };
   }
 
-  let processedCount = 0;
   const clockOutTime = now;
 
-  const updates = openAttendances.map(async (attendance) => {
+  const results = await Promise.all(openAttendances.map(async (attendance) => {
     // Get user shift info
     let shiftStart: string | undefined;
     let shiftEnd: string | undefined;
@@ -55,7 +54,7 @@ export async function autoCheckout(): Promise<AutoCheckoutResult> {
     const currentMinutes = timestampToMinutesInTimezone(now, timezone);
 
     if (currentMinutes < shiftEndMinutes) {
-      return; // shift not over for this user, skip
+      return false; // shift not over for this user, skip
     }
 
     const totalWorkMinutes = Math.floor(
@@ -74,12 +73,13 @@ export async function autoCheckout(): Promise<AutoCheckoutResult> {
       totalWorkMinutes,
       status: checkoutValidation.status,
       isAutoCheckOut: true,
+    
     });
 
-    processedCount++;
-  });
+    return true; // successfully processed
+  }));
 
-  await Promise.all(updates);
+  const processedCount = results.filter(r => r).length;
 
   console.log(
     `[AutoCheckout] Processed ${processedCount} auto-checkouts`

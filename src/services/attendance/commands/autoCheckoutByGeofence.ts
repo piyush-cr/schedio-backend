@@ -5,7 +5,7 @@ import attendanceCrud from "../../../crud/attendance.crud";
 import userCrud from "../../../crud/user.crud";
 import { validateCheckoutAndGetStatus } from "../_shared/status";
 import { DEFAULT_GEOFENCE_RADIUS } from "../_shared/geofence";
-import { appQueue, queueNotification } from "../../../jobs/queues/app.queue";
+import { sendNotification } from "../../../firebase/messaging";
 import { timeStringToMinutes, timestampToMinutesInTimezone } from "../_shared/time";
 
 const GEOFENCE_CHECKOUT_DELAY_MS = 15 * 60 * 1000; // 15 minutes
@@ -65,7 +65,7 @@ export async function autoCheckoutByGeofence(
   if (isShiftOngoing) {
     // Case A: Shift is ongoing -> Send Alerts
     if (user.fcmToken) {
-      await queueNotification({
+      await sendNotification({
         token: user.fcmToken,
         title: "Out of Range Alert",
         body: "You have moved out of the office geofence during your shift timings.",
@@ -73,14 +73,14 @@ export async function autoCheckoutByGeofence(
       });
     }
 
-    const adminUsers = await userCrud.findMany({ 
+    const adminUsers = await userCrud.findMany({
         role: { $in: [UserRole.ADMIN, UserRole.SENIOR] } as any,
         teamId: user.teamId
     });
 
     for (const admin of adminUsers) {
       if (admin.fcmToken) {
-        await queueNotification({
+        await sendNotification({
           token: admin.fcmToken,
           title: "Employee Out of Range",
           body: `${user.name} has moved out of the office geofence during their shift.`,
@@ -104,28 +104,14 @@ export async function autoCheckoutByGeofence(
       return { action: "SCHEDULED", message: "Geofence breach already recorded. Waiting for 15-minute delay." };
     }
 
-    // Record breach time and schedule a delayed BullMQ job
+    // Record breach time
     await attendanceCrud.updateById(attendance._id.toString(), {
       geofenceBreachTime: timestamp,
     });
 
-    await appQueue.add(
-      "GEOFENCE_DELAYED_CHECKOUT",
-      {
-        userId,
-        attendanceId: attendance._id.toString(),
-        latitude,
-        longitude,
-      },
-      {
-        delay: GEOFENCE_CHECKOUT_DELAY_MS,
-        jobId: `geofence-delayed-${userId}-${date}`,
-      }
-    );
-
     // Notify user
     if (user.fcmToken) {
-      await queueNotification({
+      await sendNotification({
         token: user.fcmToken,
         title: "Geofence Alert",
         body: "You left the office area after your shift. You will be auto-checked out in 15 minutes if you don't return.",
@@ -139,7 +125,6 @@ export async function autoCheckoutByGeofence(
 
 /**
  * Clear geofence breach (user re-entered the geofence).
- * Removes the scheduled delayed checkout job.
  */
 export async function clearGeofenceBreach(userId: string): Promise<{ cleared: boolean }> {
   const date = format(Date.now(), "yyyy-MM-dd");
@@ -152,16 +137,6 @@ export async function clearGeofenceBreach(userId: string): Promise<{ cleared: bo
   await attendanceCrud.updateById(attendance._id.toString(), {
     geofenceBreachTime: null,
   });
-
-  // Try to remove the delayed job
-  try {
-    const job = await appQueue.getJob(`geofence-delayed-${userId}-${date}`);
-    if (job) {
-      await job.remove();
-    }
-  } catch (e) {
-    console.warn("[ClearGeofenceBreach] Could not remove delayed job:", e);
-  }
 
   return { cleared: true };
 }
@@ -224,7 +199,7 @@ async function executeGeofenceCheckout(
 
   // Notify user of auto-checkout
   if (user.fcmToken) {
-    await queueNotification({
+    await sendNotification({
       token: user.fcmToken,
       title: "Auto Check-out",
       body: "You have been automatically checked out after being outside the office range for 15 minutes.",

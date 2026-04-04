@@ -9,6 +9,7 @@ import { DEFAULT_GEOFENCE_RADIUS } from "../_shared/geofence";
 // import { appQueue } from "../../../jobs/queues/app.queue";
 import { timeStringToMinutes, timestampToMinutesInTimezone } from "../_shared/time";
 import { uploadFile } from "../../../utils/imagekit";
+import { deleteLocalFile } from "../../../utils/deleteFile";
 
 export interface CheckOutResult {
   clockOutTime: string;
@@ -180,6 +181,7 @@ export async function checkOut(input: CheckOutInput): Promise<CheckOutResult> {
       session
     );
 
+    await deleteLocalFile(localFilePath!)
     return {
       clockOutTime: formatTimeTo12Hour(timestamp),
       latitude: latitude,

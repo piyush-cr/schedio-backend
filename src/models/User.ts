@@ -11,6 +11,7 @@ export interface IUser
   _id: mongoose.Types.ObjectId;
   position?: UserPosition;
   fcmToken?: string;
+  geofenceBreachTime?: number;
 }
 
 const UserSchema = new Schema<IUser>(
@@ -87,6 +88,11 @@ const UserSchema = new Schema<IUser>(
       type: String,
       match: /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/,
     },
+    geofenceBreachTime: {
+      type: Number,
+      default: 15, // 15 minutes
+      min: 0,
+    },
     fcmToken: {
       type: String,
       required: false,
@@ -112,6 +118,7 @@ UserSchema.pre("save", async function () {
     this.shiftStart = undefined;
     this.shiftEnd = undefined;
     this.position = undefined; // ⚠️ Admins likely shouldn't have a position either
+    this.geofenceBreachTime = undefined; // Admins don't need geofence breach time setting
   }
 });
 UserSchema.methods.comparePassword = async function (

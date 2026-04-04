@@ -81,18 +81,6 @@ services:
     environment:
       MONGODB_URI: mongodb://mongo1:27017,mongo2:27017,mongo3:27017/attendance_db?replicaSet=rs0
 
-  worker:
-    build: .
-    container_name: worker
-    command: bun run worker
-    depends_on:
-      mongo-init:
-        condition: service_completed_successfully
-    env_file:
-      - .env
-    environment:
-      MONGODB_URI: mongodb://mongo1:27017,mongo2:27017,mongo3:27017/attendance_db?replicaSet=rs0
-
 volumes:
   mongo1_data:
   mongo2_data:

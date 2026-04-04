@@ -27,10 +27,9 @@ export async function autoCheckoutByShift(targetShiftEnd: string): Promise<AutoC
     return { processed: 0 };
   }
 
-  let processedCount = 0;
   const clockOutTime = now;
 
-  const updates = openAttendances.map(async (attendance) => {
+  const results = await Promise.all(openAttendances.map(async (attendance) => {
     // Get user shift info
     let shiftStart: string | undefined;
     let shiftEnd: string | undefined;
@@ -54,7 +53,7 @@ export async function autoCheckoutByShift(targetShiftEnd: string): Promise<AutoC
 
     // Skip if user doesn't have shiftEnd defined or doesn't match target shift
     if (!shiftEnd || shiftEnd !== targetShiftEnd) {
-      return;
+      return false;
     }
 
     // Verify shift has ended
@@ -63,7 +62,7 @@ export async function autoCheckoutByShift(targetShiftEnd: string): Promise<AutoC
 
     if (currentMinutes < shiftEndMinutes) {
       logger.info(`[AutoCheckoutByShift] Shift not yet ended for user with shiftEnd ${shiftEnd}`);
-      return;
+      return false;
     }
 
     const totalWorkMinutes = Math.floor(
@@ -78,11 +77,11 @@ export async function autoCheckoutByShift(targetShiftEnd: string): Promise<AutoC
       clockOutImageUrl: attendance.clockInImageUrl,
     });
 
-    processedCount++;
     logger.info(`[AutoCheckoutByShift] Auto-checked out user ${attendance.userId} with shiftEnd ${shiftEnd}`);
-  });
+    return true;
+  }));
 
-  await Promise.all(updates);
+  const processedCount = results.filter(r => r).length;
 
   logger.info(
     `[AutoCheckoutByShift] Processed ${processedCount} auto-checkouts for shiftEnd ${targetShiftEnd}`

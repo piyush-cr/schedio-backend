@@ -1,5 +1,6 @@
 import { UpdateQuery, ClientSession } from "mongoose";
 import mongoose from "mongoose";
+import type { QueryFilter } from "mongoose";
 import { Attendance, IAttendance } from "../models/Attendance";
 import {
   AttendanceCreateInput,
@@ -8,11 +9,9 @@ import {
 } from "../types/attendance.types";
 import { toObjectId } from "../utils/mongoUtils";
 
-// ─── Constants ───────────────────────────────────────────────────────────────
 
 const OPEN_ATTENDANCE_LIMIT = 1000;
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AttendanceSummary {
   totalMinutes: number;
@@ -23,7 +22,6 @@ interface FindOpenAttendancesFilter {
   date?: string;
 }
 
-// ─── Query Builder ────────────────────────────────────────────────────────────
 
 function buildQuery(filter: AttendanceFilter): any {
   const query: any = {};
@@ -146,9 +144,9 @@ async function findOneAndUpdate(
 
     if (!updated) {
       throw new Error("Already checked in today");
-      }
-//@ts-ignore
-      return updated;
+    }
+    //@ts-ignore
+    return updated;
   } catch (error: any) {
     if (error.code === 11000) {
       throw new Error("Already checked in today");
@@ -232,12 +230,18 @@ async function getSummary(
  * Find open attendances (clocked in but not out).
  * Pass a `date` to filter by a specific day, or omit to get all open across all dates.
  */
+
+
 async function findOpenAttendances(
   filter: FindOpenAttendancesFilter = {}
 ): Promise<IAttendance[]> {
-  const query: any = {
+  const query: QueryFilter<IAttendance> = {
     clockInTime: { $exists: true, $ne: null },
-    $or: [{ clockOutTime: { $exists: false } }, { clockOutTime: null }],
+    $or: [
+      { clockOutTime: { $exists: false } },
+      { clockOutTime: null },
+      { clockOutTime: 0 },
+    ],
   };
 
   if (filter.date) {
@@ -246,7 +250,8 @@ async function findOpenAttendances(
 
   return Attendance.find(query)
     .populate("userId", "-password")
-    .limit(OPEN_ATTENDANCE_LIMIT);
+    .limit(OPEN_ATTENDANCE_LIMIT)
+    .lean();
 }
 
 

@@ -23,7 +23,8 @@ const app = express();
 app.use(helmet());
 app.use(cookieParser());
 app.use(cors({
-    origin: "https://attendance-app-fontend.vercel.app",
+    // origin: "https://attendance-app-fontend.vercel.app",
+    origin:"https://q6303qc1-3000.inc1.devtunnels.ms",
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -49,7 +50,6 @@ app.get("/health", (_req: Request, res: Response) => {
     });
 });
 
-app.use(errorHandler)
 app.use("/api/auth", authRoutes);
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/tasks", taskRoutes);
@@ -64,6 +64,7 @@ app.use((_req: Request, res: Response) => {
         message: "Route not found",
     });
 });
+app.use(errorHandler)
 app.use((err: ApiError, req: Request, res: Response, _next: NextFunction) => {
     logger.error({
       message: err.message,

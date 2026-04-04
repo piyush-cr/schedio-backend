@@ -6,5 +6,7 @@ export async function deleteLocalFile(filePath: string) {
     console.log("Local file deleted:", filePath);
   } catch (err) {
     console.error("Failed to delete file:", err);
+    throw new Error("Failed to delete file")
   }
+
 }

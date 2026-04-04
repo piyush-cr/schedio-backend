@@ -6,9 +6,10 @@ import userCrud from "../../../crud/user.crud";
 import attendanceCrud from "../../../crud/attendance.crud";
 import { calculateStatus, formatTimeTo12Hour } from "../_shared";
 import { DEFAULT_GEOFENCE_RADIUS } from "../_shared/geofence";
-import { appQueue } from "../../../jobs/queues/app.queue";
+// import { appQueue } from "../../../jobs/queues/app.queue";
 import { NotFoundError, BadRequestError, ForbiddenError } from "../../../utils/ApiError";
 import { uploadFile } from "../../../utils/imagekit";
+import { deleteLocalFile } from "../../../utils/deleteFile";
 
 export interface CheckInResult {
   clockInTime: string;
@@ -60,6 +61,7 @@ export async function checkIn(input: CheckInInput): Promise<CheckInResult> {
           clockInLng: longitude,
           clockInImageUrl: uploadImage.url,
           status,
+          geofenceBreachTime: user.geofenceBreachTime
         },
         $setOnInsert: { userId, date },
       },
@@ -114,6 +116,7 @@ export async function checkIn(input: CheckInInput): Promise<CheckInResult> {
   //   })
   //   .catch((err) => console.error("[checkIn] Failed to queue notification:", err));
 
+  await deleteLocalFile(localFilePath!)
   return {
     clockInTime: formatTimeTo12Hour(timestamp),
     latitude,

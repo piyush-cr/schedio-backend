@@ -14,7 +14,6 @@
   },
   "scripts": {
     "dev": "bun --watch src/index.ts",
-    "worker": "bun src/worker.ts",
     "build": "bun build src/index.ts --outdir=dist --target=bun",
     "start": "bun dist/index.js",
     "seed": "bun run-seed.ts",
