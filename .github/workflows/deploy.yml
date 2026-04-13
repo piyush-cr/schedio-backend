@@ -21,21 +21,17 @@ jobs:
           ssh -i ~/.ssh/id_rsa \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
-          set -e
-          cd /opt/schedioapp/app
-
-          git remote set-url origin https://github.com/piyush-cr/schedio-backend.git
-          git fetch origin main
-          git reset --hard origin/main
-
-          docker build -t schedioapp-backend:latest .
-
-          docker-compose -f /opt/schedioapp/docker-compose.prod.yml \
-            up -d --no-deps --force-recreate backend worker
-
-          sleep 10
-          curl -sf http://localhost:3000/health && echo "DEPLOY_DONE"
-          ENDSSH
+            -o BatchMode=yes \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            "set -e && \
+             cd /opt/schedioapp/app && \
+             git remote set-url origin https://github.com/piyush-cr/schedio-backend.git && \
+             git fetch origin main && \
+             git reset --hard origin/main && \
+             docker build -t schedioapp-backend:latest . && \
+             docker-compose -f /opt/schedioapp/docker-compose.prod.yml up -d --no-deps --force-recreate backend worker && \
+             sleep 10 && \
+             curl -sf http://localhost:3000/health && \
+             echo DEPLOY_DONE"
       - name: Health check
         run: sleep 20 && curl -f https://api.schedioapp.in/health && echo "LIVE"
