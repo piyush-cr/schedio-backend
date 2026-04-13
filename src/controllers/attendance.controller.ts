@@ -1,309 +1,255 @@
-import { Response } from "express";
+import { Response, NextFunction } from "express";
 import attendanceService from "../services/attendance.service";
 import { AuthRequest } from "../middleware/auth";
 import { MulterRequest } from "../types";
 import { deleteLocalFile } from "../utils/deleteFile";
+import { BadRequestError, UnauthorizedError } from "../utils/ApiError";
 
 async function checkIn(
     req: AuthRequest & MulterRequest,
-    res: Response
-) {
+    res: Response,
+    next: NextFunction
+): Promise<void> {
     if (!req.file && req.files) {
         const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-        req.file = files['photo']?.[0] || files['image']?.[0];
+        req.file = files["photo"]?.[0] || files["image"]?.[0];
     }
 
     try {
-        const localFilePath = req.file?.path || '';
-
+        const userId = req.user?.userId;
+        if (!userId) throw new UnauthorizedError("User is unauthorized");
         const result = await attendanceService.checkIn({
-            userId: req.user!.userId,
+            userId,
             latitude: Number(req.body.latitude),
             longitude: Number(req.body.longitude),
             timestamp: Number(req.body.timestamp),
-            localFilePath,
-            metadata: req.body.metadata
+            localFilePath: req.file?.path || "",
+            metadata: req.body.metadata,
         });
 
-        return res.status(200).json({
+        res.status(200).json({
             success: true,
             message: "Check-in successful. Image upload is being processed.",
             data: result,
         });
-    } catch (error: any) {
-        if (req.file?.path) {
-            await deleteLocalFile(req.file.path).catch(console.error);
-        }
-        return res.status(400).json({
-            success: false,
-            message: error.message || "Check-in failed",
-        });
+    } catch (error) {
+        if (req.file?.path) await deleteLocalFile(req.file.path).catch(console.error);
+        next(error);
     }
 }
 
-
-export async function checkOut(
+async function checkOut(
     req: AuthRequest & MulterRequest,
-    res: Response
-) {
+    res: Response,
+    next: NextFunction
+): Promise<void> {
     if (!req.file && req.files) {
         const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-        req.file = files['photo']?.[0] || files['image']?.[0];
+        req.file = files["photo"]?.[0] || files["image"]?.[0];
     }
 
     try {
-        console.log("the data body", req.body, req.file?.path)
-        const localFilePath = req.file?.path || '';
+        const userId = req.user?.userId;
+        if (!userId) throw new UnauthorizedError("User is unauthorized");
 
         const result = await attendanceService.checkOut({
-            userId: req.user!.userId,
+            userId,
             latitude: Number(req.body.latitude),
             longitude: Number(req.body.longitude),
             timestamp: Number(req.body.timestamp),
             isAuto: req.body.isAuto ?? false,
-            localFilePath,
+            localFilePath: req.file?.path || "",
         });
 
-        return res.status(200).json({
+        res.status(200).json({
             success: true,
             message: "Check-out successful. Image upload is being processed.",
             data: result,
         });
-
-    } catch (error: any) {
-        if (req.file?.path) {
-            await deleteLocalFile(req.file.path).catch(console.error);
-        }
-
-        return res.status(400).json({
-            success: false,
-            message: error.message || "Check-out failed",
-        });
+    } catch (error) {
+        if (req.file?.path) await deleteLocalFile(req.file.path).catch(console.error);
+        next(error);
     }
 }
 
 async function getWeeklyAttendance(
     req: AuthRequest,
-    res: Response
-) {
+    res: Response,
+    next: NextFunction
+): Promise<void> {
     try {
+        const userId = req.user?.userId;
+        if (!userId) throw new UnauthorizedError("User is unauthorized");
+
         const result = await attendanceService.getWeeklyAttendance({
-            userId: req.user!.userId,
+            userId,
             weekStart: req.query.weekStart as string | undefined,
         });
 
-        return res.status(200).json({
-            success: true,
-            data: result,
-        });
-
+        res.status(200).json({ success: true, data: result });
     } catch (error) {
-        console.error("Get weekly attendance error:", error);
-
-        return res.status(500).json({
-            success: false,
-            message: "Internal server error",
-        });
+        next(error);
     }
 }
-
 
 async function getMonthlyAttendance(
     req: AuthRequest,
-    res: Response
-) {
+    res: Response,
+    next: NextFunction
+): Promise<void> {
     try {
-        const { month, year } = req.query as any;
+        const userId = req.user?.userId;
+        if (!userId) throw new UnauthorizedError("User is unauthorized");
 
-        console.log("month", month);
-        console.log("year", year);
+        const { month, year } = req.query;
 
         const result = await attendanceService.getMonthlyAttendance({
-            userId: req.user!.userId,
-            month,
-            year,
+            userId,
+            month: month ? Number(month) : undefined,
+            year: year ? Number(year) : undefined,
         });
 
-        return res.status(200).json({
-            success: true,
-            data: result,
-        });
-
+        res.status(200).json({ success: true, data: result });
     } catch (error) {
-        console.error("Get monthly attendance error:", error);
-
-        return res.status(500).json({
-            success: false,
-            message: "Internal server error",
-        });
+        next(error);
     }
 }
-
 
 async function getTodayAttendance(
     req: AuthRequest,
-    res: Response
-) {
+    res: Response,
+    next: NextFunction
+): Promise<void> {
     try {
-        const result = await attendanceService.getTodayAttendance(
-            req.user!.userId
-        );
-        return res.status(200).json({
-            success: true,
-            data: result,
-        });
+        const userId = req.user?.userId;
+        if (!userId) throw new UnauthorizedError("User is unauthorized");
+
+        const result = await attendanceService.getTodayAttendance(userId);
+
+        res.status(200).json({ success: true, data: result });
     } catch (error) {
-        console.error("Get today attendance error:", error);
-        return res.status(500).json({
-            success: false,
-            message: "Internal server error",
-        });
+        next(error);
     }
 }
-
 
 async function getAttendanceByDate(
     req: AuthRequest,
-    res: Response
-) {
+    res: Response,
+    next: NextFunction
+): Promise<void> {
     try {
-        const { date } = req.query;
-        if (typeof date !== "string") {
-            return res.status(400).json({
-                success: false,
-                message: "date query param is required (YYYY-MM-DD)",
-            });
-        }
-        const attendance = await attendanceService.getAttendanceByDate({
-            userId: req.user!.userId,
-            date,
-        });
+        const userId = req.user?.userId;
+        if (!userId) throw new UnauthorizedError("User is unauthorized");
 
-        return res.status(200).json({
-            success: true,
-            data: attendance,
-        });
+        // already validated by zod dateQuerySchema.required({ date: true })
+        const date = req.query.date as string;
 
+        const attendance = await attendanceService.getAttendanceByDate({ userId, date });
+
+        res.status(200).json({ success: true, data: attendance });
     } catch (error) {
-        console.error("Get day attendance error:", error);
-        return res.status(500).json({
-            success: false,
-            message: "Internal server error",
-        });
+        next(error);
     }
 }
-
 
 async function getUsersForAttendanceView(
     req: AuthRequest,
-    res: Response
-) {
+    res: Response,
+    next: NextFunction
+): Promise<void> {
     try {
-        const { page, limit } = req.query as any;
+        const userId = req.user?.userId;
+        if (!userId) throw new UnauthorizedError("User is unauthorized");
+
+        // page/limit already validated + defaulted by paginationSchema
+        const { page, limit } = req.query;
 
         const result = await attendanceService.getUsersForAttendanceView({
-            requesterId: req.user!.userId,
+            requesterId: userId,
             role: req.user!.role!,
-            page,
-            limit
+            page: Number(page),
+            limit: Number(limit),
         });
 
-        if (!result.success) {
-            return res.status(400).json({
-                success: false,
-                message: result.message,
-            });
-        }
+        if (!result.success) throw new BadRequestError(result.message);
 
-        return res.status(200).json({
-            success: true,
-            data: result.data,
-        });
+        res.status(200).json({ success: true, data: result.data });
     } catch (error) {
-        console.error("Get users error:", error);
-
-        return res.status(500).json({
-            success: false,
-            message: "Internal server error",
-        });
+        next(error);
     }
 }
 
-export async function getUserAttendanceForSenior(
+async function getUserAttendanceForSenior(
     req: AuthRequest,
-    res: Response
-) {
+    res: Response,
+    next: NextFunction
+): Promise<void> {
     try {
-        const { userId } = req.params;
-        if (!userId) {
-            return res.status(400).json({
-                success: false,
-                message: "userId is required",
-            });
-        }
-        const { weekStart, month, year, startDate, endDate, page, limit } = req.query as any;
+        const userId = req.user?.userId;
+        if (!userId) throw new UnauthorizedError("User is unauthorized");
+
+        // userId param already validated by userIdParamSchema
+        const { userId: targetUserId } = req.params;
+        const { weekStart, month, year, startDate, endDate, page, limit } = req.query;
 
         const data = await attendanceService.getUserAttendanceForSenior({
-            requester: {
-                userId: req.user!.userId,
-                role: req.user!.role!,
-            },
-            targetUserId: userId,
-            weekStart,
-            month,
-            year,
-            startDate,
-            endDate,
-            page,
-            limit,
+            requester: { userId, role: req.user!.role! },
+            targetUserId,
+            weekStart: weekStart as string | undefined,
+            month: month ? Number(month) : undefined,
+            year: year ? Number(year) : undefined,
+            startDate: startDate as string | undefined,
+            endDate: endDate as string | undefined,
+            page: page ? Number(page) : undefined,
+            limit: limit ? Number(limit) : undefined,
         });
 
-
-        return res.status(200).json({
-            success: true,
-            data,
-        });
-
-    } catch (error: any) {
-        console.error("Get user attendance (admin) error:", error);
-
-        return res.status(403).json({
-            success: false,
-            message: error.message || "Access denied",
-        });
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
     }
 }
 
 async function reportGeofenceBreach(
     req: AuthRequest,
-    res: Response
-) {
+    res: Response,
+    next: NextFunction
+): Promise<void> {
     try {
+        const userId = req.user?.userId;
+        if (!userId) throw new UnauthorizedError("User is unauthorized");
+
         const { latitude, longitude } = req.body;
-        
         if (latitude === undefined || longitude === undefined) {
-            return res.status(400).json({
-                success: false,
-                message: "latitude and longitude are required"
-            });
+            throw new BadRequestError("latitude and longitude are required");
         }
 
         const result = await attendanceService.autoCheckoutByGeofence(
-            req.user!.userId,
+            userId,
             Number(latitude),
             Number(longitude)
         );
 
-        return res.status(200).json({
-            success: true,
-            data: result
-        });
-    } catch (error: any) {
-        console.error("Geofence breach report error:", error);
-        return res.status(400).json({
-            success: false,
-            message: error.message || "Failed to process geofence breach"
-        });
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+}
+
+async function clearGeofenceBreach(
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+): Promise<void> {
+    try {
+        const userId = req.user?.userId;
+        if (!userId) throw new UnauthorizedError("User is unauthorized");
+
+        const result = await attendanceService.clearGeofenceBreach(userId);
+
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
     }
 }
 
@@ -316,7 +262,8 @@ const attendanceController = {
     getAttendanceByDate,
     getUsersForAttendanceView,
     getUserAttendanceForSenior,
-    reportGeofenceBreach
-}
+    reportGeofenceBreach,
+    clearGeofenceBreach,
+};
 
-export default attendanceController
+export default attendanceController;

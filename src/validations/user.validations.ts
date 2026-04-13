@@ -16,7 +16,10 @@ export const createUserSchema = z.object({
   teamId: z.string().optional(),
   shiftStart: z.string().optional(),
   shiftEnd: z.string().optional(),
+  geofenceBreachTime: z.number().min(0).optional().default(15),
   password: z.string(),
+  officeLat: z.number().min(-90).max(90).optional(),
+  officeLng: z.number().min(-180).max(180).optional(),
 });
 
 export const updateUserSchema = z.object({
@@ -32,6 +35,9 @@ export const updateUserSchema = z.object({
   teamId: z.string().optional(),
   shiftStart: z.string().optional(),
   shiftEnd: z.string().optional(),
+  geofenceBreachTime: z.number().min(0).optional(),
+  officeLat: z.number().min(-90).max(90).optional(),
+  officeLng: z.number().min(-180).max(180).optional(),
 });
 
 export const changePasswordSchema = z.object({

@@ -6,7 +6,10 @@ import userCrud from "../../../crud/user.crud";
 import attendanceCrud from "../../../crud/attendance.crud";
 import { calculateStatus, formatTimeTo12Hour } from "../_shared";
 import { DEFAULT_GEOFENCE_RADIUS } from "../_shared/geofence";
-import { appQueue } from "../../../jobs/queues/app.queue";
+// import { appQueue } from "../../../jobs/queues/app.queue";
+import { NotFoundError, BadRequestError, ForbiddenError } from "../../../utils/ApiError";
+import { uploadFile } from "../../../utils/imagekit";
+import { deleteLocalFile } from "../../../utils/deleteFile";
 
 export interface CheckInResult {
   clockInTime: string;
@@ -17,54 +20,37 @@ export interface CheckInResult {
   totalHoursThisWeek: number;
 }
 
-/**
- * Check in for a user
- */
 export async function checkIn(input: CheckInInput): Promise<CheckInResult> {
   const { userId, latitude, longitude, localFilePath } = input;
   const timestamp = Date.now();
   const date = format(timestamp, "yyyy-MM-dd");
 
   const user = await userCrud.findById(userId);
-  if (!user) {
-    throw new Error("User not found");
-  }
-
-  const status = calculateStatus(timestamp, user.shiftStart, user.shiftEnd, "Asia/Kolkata", 20);
+  if (!user) throw new NotFoundError("User not found");
 
   if (user.officeLat && user.officeLng) {
-    const userLocation: GeoPoint = {
-      lat: latitude,
-      lng: longitude,
-    };
-
+    const userLocation: GeoPoint = { lat: latitude, lng: longitude };
     const officeGeofence = {
-      center: {
-        lat: user.officeLat,
-        lng: user.officeLng,
-      },
+      center: { lat: user.officeLat, lng: user.officeLng },
       radius: DEFAULT_GEOFENCE_RADIUS,
     };
 
     if (!isInsideGeofence(userLocation, officeGeofence)) {
-      throw new Error("Outside office geofence");
+      throw new ForbiddenError("You are outside the office geofence");
     }
   }
+
+  const status = calculateStatus(timestamp, user.shiftStart, user.shiftEnd, "Asia/Kolkata", 20);
 
   const { executeWithTransaction, createAuditLogEntry } = await import(
     "../../../utils/transaction"
   );
 
   const attendance = await executeWithTransaction(async (session) => {
-    const existing = await attendanceCrud.findByUserIdAndDate(
-      userId,
-      date,
-      session
-    );
+    const existing = await attendanceCrud.findByUserIdAndDate(userId, date, session);
 
-    if (existing && existing.clockInTime) {
-      throw new Error("Already checked in today");
-    }
+    if (existing?.clockInTime) throw new BadRequestError("Already checked in today");
+    const uploadImage = await uploadFile(localFilePath!)
 
     const attendanceRecord = await attendanceCrud.findOneAndUpdate(
       { userId, date, clockInTime: { $exists: false } },
@@ -73,16 +59,13 @@ export async function checkIn(input: CheckInInput): Promise<CheckInResult> {
           clockInTime: timestamp,
           clockInLat: latitude,
           clockInLng: longitude,
-          clockInImageUrl: "",
-          status: status,
+          clockInImageUrl: uploadImage.url,
+          status,
+          geofenceBreachTime: user.geofenceBreachTime
         },
         $setOnInsert: { userId, date },
       },
-      {
-        new: true,
-        upsert: true,
-        session,
-      }
+      { new: true, upsert: true, session }
     );
 
     await createAuditLogEntry(
@@ -92,11 +75,7 @@ export async function checkIn(input: CheckInInput): Promise<CheckInResult> {
         targetUser: userId,
         resource: "Attendance",
         resourceId: attendanceRecord._id,
-        metadata: {
-          location: { latitude, longitude },
-          status,
-          timestamp,
-        },
+        metadata: { location: { latitude, longitude }, status, timestamp },
       },
       session
     );
@@ -111,48 +90,39 @@ export async function checkIn(input: CheckInInput): Promise<CheckInResult> {
   const weekEndStr = new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000)
     .toISOString()
     .split("T")[0];
-
-  const weeklyRecords = await attendanceCrud.findMany({
+  const summary = await attendanceCrud.getSummary({
     userId,
     startDate: weekStartStr,
     endDate: weekEndStr,
   });
 
-  const totalHoursThisWeek =
-    weeklyRecords.reduce(
-      (sum, record) => sum + (record.totalWorkMinutes || 0),
-      0
-    ) / 60;
+  const totalHoursThisWeek = Math.round(((summary[0]?.totalMinutes || 0) / 60) * 100) / 100;
+  // if (attendance && localFilePath) {
+  //   appQueue
+  //     .add("UPLOAD_CHECKIN_IMAGE", {
+  //       userId,
+  //       attendanceId: attendance._id.toString(),
+  //       localFilePath,
+  //       date,
+  //     })
+  //     .catch((err) => console.error("[checkIn] Failed to queue image upload:", err));
+  // }
 
-  if (attendance && localFilePath) {
-    await appQueue
-      .add("UPLOAD_CHECKIN_IMAGE", {
-        userId,
-        attendanceId: attendance._id.toString(),
-        localFilePath,
-        date,
-      })
-      .catch((err) => console.error("Failed to queue image upload job:", err));
-  }
+  // appQueue
+  //   .add("SEND_ATTENDANCE_NOTIFICATION", {
+  //     userId,
+  //     type: status === AttendanceStatus.LATE ? "LATE_ARRIVAL" : "CHECK_IN",
+  //     data: { userName: user.name, timestamp, status },
+  //   })
+  //   .catch((err) => console.error("[checkIn] Failed to queue notification:", err));
 
-  await appQueue
-    .add("SEND_ATTENDANCE_NOTIFICATION", {
-      userId,
-      type: status === AttendanceStatus.LATE ? "LATE_ARRIVAL" : "CHECK_IN",
-      data: {
-        userName: user.name,
-        timestamp,
-        status,
-      },
-    })
-    .catch((err) => console.error("Failed to queue notification job:", err));
-
+  await deleteLocalFile(localFilePath!)
   return {
     clockInTime: formatTimeTo12Hour(timestamp),
     latitude,
     longitude,
     clockInImageUrl: attendance?.clockInImageUrl || null,
     status: attendance?.status || status,
-    totalHoursThisWeek: Math.round(totalHoursThisWeek * 100) / 100,
+    totalHoursThisWeek
   };
 }

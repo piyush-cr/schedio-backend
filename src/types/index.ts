@@ -59,6 +59,7 @@ export interface EmployeeProfile {
   officeLng?: number;
   shiftStart?: string;
   shiftEnd?: string;
+  geofenceBreachTime?: number; // Minutes to wait before auto-checkout after shift ends (default: 15)
 
   // Admin onboarding
   isPasswordTemporary?: boolean;
@@ -90,6 +91,8 @@ export interface AttendanceRecord {
 
   totalWorkMinutes: number;
   status: AttendanceStatus;
+  isAutoCheckOut?: boolean;
+  geofenceBreachTime?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }

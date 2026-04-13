@@ -5,6 +5,7 @@ import attendanceCrud from "../../../crud/attendance.crud";
 import { getTodayAttendance } from "../queries/getTodayAttendance";
 import { assertAdminOrSenior, getSeniorTeamFilter } from "../_shared/permissions";
 import { normalizePagination } from "../_shared/pagination";
+import { Types } from "mongoose";
 
 export interface GetUsersForAttendanceViewParams {
   requesterId: string;
@@ -14,7 +15,7 @@ export interface GetUsersForAttendanceViewParams {
 }
 
 export interface UserAttendanceItem {
-  id: string;
+  id: Types.ObjectId;
   name: string;
   email: string;
   role: string;

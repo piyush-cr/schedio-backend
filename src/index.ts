@@ -4,8 +4,8 @@ import { connectDB } from "./db/db";
 import { seedAdminUser } from "./seeds/admin.seed";
 import { logger } from "./utils/logger";
 import app from "./app";
-import { runSeed } from './seeds/seed';
-import { initJobs } from "./jobs";
+// import { runSeed } from './seeds/seed';
+import { initCron } from "./jobs";
 
 const PORT = process.env.PORT || 3000;
 
@@ -15,7 +15,7 @@ const startServer = async (): Promise<void> => {
     await seedAdminUser();
 
     // Initialize background jobs
-    initJobs();
+    initCron()
 
     // await runSeed()
     app.listen(PORT, () => {

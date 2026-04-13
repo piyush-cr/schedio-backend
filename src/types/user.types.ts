@@ -23,10 +23,11 @@ export type UserCreateInput = {
   officeLng?: number;
   shiftStart?: string;
   shiftEnd?: string;
+  geofenceBreachTime?: number;
 };
 
 export type UserFilter = {
-  _id?: any;
+  _id?: mongoose.Types.ObjectId | { $in: mongoose.Types.ObjectId[] };
   employeeId?: string;
   email?: string;
   role?: UserRole;
@@ -44,6 +45,7 @@ export type UserUpdateInput = {
   officeLng?: number;
   shiftStart?: string;
   shiftEnd?: string;
+  geofenceBreachTime?: number;
   fcmToken?: string;
 };
 

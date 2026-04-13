@@ -50,6 +50,7 @@ export async function executeWithTransaction<T>(
         error.message.includes("Transaction numbers are only allowed on a replica set") ||
         error.message.includes("standalone")
       ) {
+        
          await session.endSession();
          return callback(undefined as any);
       }

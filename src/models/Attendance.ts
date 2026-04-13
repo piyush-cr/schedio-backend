@@ -5,6 +5,8 @@ export interface IAttendance extends Document, Omit<AttendanceRecord, "id"> {
   _id: mongoose.Types.ObjectId;
   userId: mongoose.Schema.Types.ObjectId;
   metadata?: any;
+  geofenceBreachTime?: number | null;
+  isAutoCheckOut?: boolean;
 }
 
 const AttendanceSchema = new Schema<IAttendance>(
@@ -53,6 +55,16 @@ const AttendanceSchema = new Schema<IAttendance>(
       enum: Object.values(AttendanceStatus),
       default: AttendanceStatus.ABSENT,
       index: true,
+    },
+
+    isAutoCheckOut: {
+      type: Boolean,
+      default: false,
+    },
+
+    geofenceBreachTime: {
+      type: Number,
+      default: null,
     },
 
     metadata: {

@@ -136,24 +136,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-  worker:
-    image: schedioapp-backend:latest
-    container_name: worker
-    restart: always
-    command: bun run worker
-    depends_on:
-      mongo-init:
-        condition: service_completed_successfully
-    env_file:
-      - .env
-    environment:
-      MONGODB_URI: mongodb://mongo1:27017,mongo2:27017,mongo3:27017/attendance_db?replicaSet=rs0
-      NODE_ENV: production
-    networks:
-      - app
-    logging:
-      driver: json-file
-      options:
-        max-size: "5m"
-        max-file: "2"

@@ -208,16 +208,9 @@ export function validateCheckoutAndGetStatus(params: {
   }
 
   if (isAfterLatest) {
-    const latestHours = Math.floor((latestCheckoutMinutes % 1440) / 60);
-    const latestMins = latestCheckoutMinutes % 60;
-    const latestTimeStr = `${latestHours
-      .toString()
-      .padStart(2, "0")}:${latestMins.toString().padStart(2, "0")}`;
-
     return {
-      canCheckout: false,
+      canCheckout: true,
       status: AttendanceStatus.HALF_DAY,
-      errorMessage: `Cannot checkout after ${latestTimeStr}. Please contact your administrator.`,
     };
   }
 

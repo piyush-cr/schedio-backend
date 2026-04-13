@@ -14,14 +14,17 @@ import morgan from "morgan";
 import { logger } from "./utils/logger";
 import { ApiError } from "./utils/ApiError";
 import helmet from "helmet";
+import { errorHandler } from "./middleware/errorHandler";
 import compression from "compression";
+
 
 const app = express();
 
 app.use(helmet());
 app.use(cookieParser());
 app.use(cors({
-    origin: "https://attendance-app-fontend.vercel.app",
+    // origin: "https://attendance-app-fontend.vercel.app",
+    origin:"https://q6303qc1-3000.inc1.devtunnels.ms",
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -61,22 +64,23 @@ app.use((_req: Request, res: Response) => {
         message: "Route not found",
     });
 });
-
+app.use(errorHandler)
 app.use((err: ApiError, req: Request, res: Response, _next: NextFunction) => {
     logger.error({
-        message: err.message,
-        stack: err.stack,
-        route: req.originalUrl,
-        method: req.method,
-        // @ts-ignore
-        user: req.user?.userId || "unauthorized",
+      message: err.message,
+      stack: err.stack,
+      route: req.originalUrl,
+      method: req.method,
+      // @ts-ignore
+      user: req.user?.userId || "unauthorized",
     });
-
+  
     res.status(err.statusCode || 500).json({
-        success: false,
-        message: err.message || "Internal server error",
-        ...(process.env.NODE_ENV === "development" && { error: err.message }),
+      success: false,
+      message: err.message || "Internal server error",
+      ...(err.errors && err.errors.length > 0 && { errors: err.errors }),
+      ...(process.env.NODE_ENV === "development" && { error: err.message }),
     });
-});
+  });
 
 export default app;

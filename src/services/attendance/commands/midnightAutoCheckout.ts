@@ -1,7 +1,6 @@
-import { AttendanceStatus } from "../../../types";
 import attendanceCrud from "../../../crud/attendance.crud";
 import userCrud from "../../../crud/user.crud";
-import { validateCheckoutAndGetStatus } from "../_shared/status";
+// import { validateCheckoutAndGetStatus } from "../_shared/status";
 
 export interface MidnightAutoCheckoutResult {
   processed: number;
@@ -13,7 +12,7 @@ export interface MidnightAutoCheckoutResult {
  * stays on the correct date. No time restriction.
  */
 export async function midnightAutoCheckout(): Promise<MidnightAutoCheckoutResult> {
-  const openAttendances = await attendanceCrud.findAllOpenAttendances();
+  const openAttendances = await attendanceCrud.findOpenAttendances();
 
   if (openAttendances.length === 0) {
     console.log("[MidnightAutoCheckout] No open attendances found");
@@ -49,19 +48,13 @@ export async function midnightAutoCheckout(): Promise<MidnightAutoCheckoutResult
       }
     }
 
-    const checkoutValidation = validateCheckoutAndGetStatus({
-      clockInTimestamp: attendance.clockInTime || clockOutTime,
-      clockOutTimestamp: clockOutTime,
-      shiftStart,
-      shiftEnd,
-    });
-
     return attendanceCrud.updateById(attendance._id.toString(), {
       clockOutTime,
       totalWorkMinutes,
-      status: checkoutValidation.status,
+
       isAutoCheckOut: true,
-      clockOutImageUrl: "",
+      clockOutImageUrl:
+        attendance.clockInImageUrl,
     });
   });
 

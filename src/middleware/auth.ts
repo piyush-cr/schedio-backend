@@ -6,6 +6,7 @@ import {
   generateRefreshToken,
 } from "../utils/auth";
 import { JWTPayload } from "../types";
+import { UnauthorizedError, NotFoundError, ApiError } from "../utils/ApiError";
 import userCrud from "../crud/user.crud";
 
 export interface AuthRequest extends Request {
@@ -19,41 +20,37 @@ export async function authenticate(
 ): Promise<void> {
   try {
     const token =
-      req.cookies?.access_token
-      ||
-      (req.headers.authorization && req.headers.authorization.startsWith("Bearer ")
+      req.cookies?.access_token ||
+      (req.headers.authorization?.startsWith("Bearer ")
         ? req.headers.authorization.split(" ")[1]
         : undefined);
-    console.log(token)
+
     if (token) {
-      const decoded = verifyToken(token);
-      req.user = decoded;
-      next();
-      return;
+      try {
+        const decoded = verifyToken(token);
+        req.user = decoded;
+        next();
+        return;
+      } catch {
+        // Token invalid/expired — fall through to refresh token logic
+      }
     }
 
     const refreshToken =
       req.cookies?.refresh_token || req.headers["x-refresh-token"];
 
     if (!refreshToken) {
-      res.status(401).json({
-        success: false,
-        message:
-          "Authentication required (access token and refresh token missing)",
-      });
-      return;
+      throw new UnauthorizedError(
+        "Authentication required (access token and refresh token missing)"
+      );
     }
 
     try {
-      const decoded = verifyRefreshToken(refreshToken);
+      const decoded = verifyRefreshToken(refreshToken as string);
 
       const user = await userCrud.findById(decoded.userId);
       if (!user) {
-        res.status(401).json({
-          success: false,
-          message: "User not found",
-        });
-        return;
+        throw new NotFoundError("User not found");
       }
 
       const tokenPayload = {
@@ -79,22 +76,15 @@ export async function authenticate(
         sameSite: "strict",
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
+
       req.user = tokenPayload;
       next();
-      return;
     } catch (error) {
-      res.status(401).json({
-        success: false,
-        message: "Invalid or expired refresh token",
-      });
-      return;
+      // Re-throw ApiErrors so errorHandler catches them
+      if (error instanceof ApiError) throw error;
+      throw new UnauthorizedError("Invalid or expired refresh token");
     }
   } catch (error) {
-    console.error("Authentication error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Authentication error",
-    });
-    return;
+    next(error); // Pass all errors to errorHandler
   }
 }

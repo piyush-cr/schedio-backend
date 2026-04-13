@@ -1,37 +1,32 @@
 import { format } from "date-fns";
-import { AttendanceStatus } from "../../../types";
 import attendanceCrud from "../../../crud/attendance.crud";
 import userCrud from "../../../crud/user.crud";
 import { validateCheckoutAndGetStatus } from "../_shared/status";
+import { timeStringToMinutes, timestampToMinutesInTimezone } from "../_shared/time";
 
 export interface AutoCheckoutResult {
   processed: number;
 }
 
 /**
- * Auto-checkout for all open attendances at 6 PM
+ * Auto-checkout for open attendances whose shift has ended.
+ * Runs periodically (every 30 min via node-cron) and checks per-user shiftEnd.
  */
 export async function autoCheckout(): Promise<AutoCheckoutResult> {
   const today = format(new Date(), "yyyy-MM-dd");
-  const currentHour = new Date().getHours();
+  const timezone = "Asia/Kolkata";
+  const now = Date.now();
 
-  if (currentHour < 18) {
-    console.log("[AutoCheckout] Skipping - before 6 PM");
-    return { processed: 0 };
-  }
-
-  const openAttendances = await attendanceCrud.findOpenAttendances(today);
+  const openAttendances = await attendanceCrud.findOpenAttendances({ date: today });
 
   if (openAttendances.length === 0) {
     return { processed: 0 };
   }
 
-  const clockOutTime = Date.now();
-  const updates = openAttendances.map(async (attendance) => {
-    const totalWorkMinutes = Math.floor(
-      (clockOutTime - (attendance.clockInTime || clockOutTime)) / (1000 * 60)
-    );
+  const clockOutTime = now;
 
+  const results = await Promise.all(openAttendances.map(async (attendance) => {
+    // Get user shift info
     let shiftStart: string | undefined;
     let shiftEnd: string | undefined;
 
@@ -52,6 +47,20 @@ export async function autoCheckout(): Promise<AutoCheckoutResult> {
       }
     }
 
+    // Per-user shift check: skip if shift not over yet
+    const shiftEndMinutes = shiftEnd
+      ? timeStringToMinutes(shiftEnd)
+      : 1080; // default 18:00
+    const currentMinutes = timestampToMinutesInTimezone(now, timezone);
+
+    if (currentMinutes < shiftEndMinutes) {
+      return false; // shift not over for this user, skip
+    }
+
+    const totalWorkMinutes = Math.floor(
+      (clockOutTime - (attendance.clockInTime || clockOutTime)) / (1000 * 60)
+    );
+
     const checkoutValidation = validateCheckoutAndGetStatus({
       clockInTimestamp: attendance.clockInTime || clockOutTime,
       clockOutTimestamp: clockOutTime,
@@ -59,18 +68,21 @@ export async function autoCheckout(): Promise<AutoCheckoutResult> {
       shiftEnd,
     });
 
-    return attendanceCrud.updateById(attendance._id.toString(), {
+    await attendanceCrud.updateById(attendance._id.toString(), {
       clockOutTime,
       totalWorkMinutes,
       status: checkoutValidation.status,
       isAutoCheckOut: true,
+    
     });
-  });
 
-  await Promise.all(updates);
+    return true; // successfully processed
+  }));
+
+  const processedCount = results.filter(r => r).length;
 
   console.log(
-    `[AutoCheckout] Processed ${updates.length} auto-checkouts`
+    `[AutoCheckout] Processed ${processedCount} auto-checkouts`
   );
-  return { processed: updates.length };
+  return { processed: processedCount };
 }

@@ -1,50 +1,60 @@
-import { appQueue } from './queues/app.queue';
-import { setupAppWorker } from './workers/app.worker';
-import { hasBullMQRedis } from '../db/redis';
+import cron from 'node-cron';
 import { logger } from '../utils/logger';
+import { autoCheckout } from '../services/attendance/commands/autoCheckout';
+import { unifiedAutoCheckout } from '../services/attendance/commands/unifiedAutoCheckout';
+import { checkShiftReminders } from '../services/attendance/commands/checkShiftReminders';
+import { withLock } from '../utils/lock';
 
-export { appQueue };
 
-export const initJobs = async () => {
-    if (!hasBullMQRedis) {
-        logger.warn('REDIS_URL not set – background jobs and worker disabled');
-        return;
-    }
-    logger.info('Initializing background jobs...');
-    setupAppWorker();
+export const initCron = (): void => {
+    logger.info('Initializing cron jobs...');
 
-    // Schedule midnight auto-checkout: runs every day at 00:00 IST
-    try {
-        await appQueue.add(
-            'MIDNIGHT_AUTO_CHECKOUT',
-            {},
-            {
-                repeat: {
-                    pattern: '0 0 * * *',   // every day at 00:00
-                    tz: 'Asia/Kolkata',
-                },
-                jobId: 'midnight-auto-checkout', // prevent duplicate schedules
-            }
-        );
-        logger.info('Midnight auto-checkout job scheduled (00:00 IST daily)');
-    } catch (error) {
-        logger.error('Failed to schedule midnight auto-checkout:', error);
-    }
-    
-    // Schedule shift reminders check: runs every 15 minutes
-    try {
-        await appQueue.add(
-            'CHECK_SHIFT_REMINDERS',
-            {},
-            {
-                repeat: {
-                    every: 15 * 60 * 1000,
-                },
-                jobId: 'check-shift-reminders',
-            }
-        );
-        logger.info('Shift reminders check job scheduled (every 15 mins)');
-    } catch (error) {
-        logger.error('Failed to schedule shift reminders job:', error);
-    }
+
+    cron.schedule(
+        '*/5 * * * *',
+        () =>
+            withLock('unifiedAutoCheckout', async () => {
+                const result = await unifiedAutoCheckout();
+                logger.info(
+                    `[Cron][unifiedAutoCheckout] Notified: ${result.notified}, Checked out: ${result.checkedOut}`,
+                );
+            }),
+        { timezone: 'Asia/Kolkata' },
+    );
+    logger.info('Unified auto-checkout scheduled (every 5 min)');
+
+    // cron.schedule(
+    //     '*/30 * * * *',
+    //     () =>
+    //         withLock('autoCheckout', async () => {
+    //             await autoCheckout();
+    //         }),
+    //     { timezone: 'Asia/Kolkata' },
+    // );
+    // logger.info('Auto-checkout safety net scheduled (every 30 min)');
+
+    // cron.schedule(
+    //     '*/15 * * * *',
+    //     () =>
+    //         withLock('shiftReminders', async () => {
+    //             await checkShiftReminders();
+    //         }),
+    //     { timezone: 'Asia/Kolkata' },
+    // );
+    // logger.info('Shift reminders scheduled (every 15 min)');
+
+    // ── Shift-specific auto-checkout (disabled — handled by unified job above) ──
+    // Uncomment and adapt if you ever need to target specific shift times directly.
+    //
+    // cron.schedule('10 18 * * *', () =>
+    //     withLock('autoCheckout', () => autoCheckoutByShift('18:00')),
+    //     { timezone: 'Asia/Kolkata' },
+    // );
+    //
+    // cron.schedule('10 20 * * *', () =>
+    //     withLock('autoCheckout', () => autoCheckoutByShift('20:00')),
+    //     { timezone: 'Asia/Kolkata' },
+    // );
+
+    logger.info('All cron jobs initialized');
 };

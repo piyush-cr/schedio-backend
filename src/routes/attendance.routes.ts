@@ -669,4 +669,11 @@ router.post(
   attendanceController.reportGeofenceBreach
 );
 
+router.post(
+  "/clear-geofence-breach",
+  authenticate,
+  requireSeniorOrJunior,
+  attendanceController.clearGeofenceBreach
+);
+
 export default router;
