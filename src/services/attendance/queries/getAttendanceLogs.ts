@@ -18,6 +18,8 @@ export interface AttendanceLog {
   clockOutTime: number | null;
   totalWorkMinutes: number;
   status: string;
+  overtimeMinutes: number;
+  totalGeofenceBreachMinutes: number;
 }
 
 export interface GetAttendanceLogsResult {
@@ -76,6 +78,8 @@ export async function getAttendanceLogs(
       clockOutTime: record.clockOutTime || null,
       totalWorkMinutes: effectiveWorkMinutes,
       status: record.status,
+      overtimeMinutes: record.overtimeMinutes || 0,
+      totalGeofenceBreachMinutes: record.totalGeofenceBreachMinutes || 0,
     };
   });
 

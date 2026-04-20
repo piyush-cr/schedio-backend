@@ -1,7 +1,6 @@
 import { format } from "date-fns";
 import attendanceCrud from "../../../crud/attendance.crud";
 import userCrud from "../../../crud/user.crud";
-import { validateCheckoutAndGetStatus } from "../_shared/status";
 import { timeStringToMinutes, timestampToMinutesInTimezone } from "../_shared/time";
 
 export interface AutoCheckoutResult {
@@ -27,7 +26,6 @@ export async function autoCheckout(): Promise<AutoCheckoutResult> {
 
   const results = await Promise.all(openAttendances.map(async (attendance) => {
     // Get user shift info
-    let shiftStart: string | undefined;
     let shiftEnd: string | undefined;
 
     const populatedUserId = attendance.userId as any;
@@ -36,13 +34,11 @@ export async function autoCheckout(): Promise<AutoCheckoutResult> {
       typeof populatedUserId === "object" &&
       "shiftStart" in populatedUserId
     ) {
-      shiftStart = populatedUserId.shiftStart;
       shiftEnd = populatedUserId.shiftEnd;
     } else {
       const userId = attendance.userId.toString();
       const user = await userCrud.findById(userId);
       if (user) {
-        shiftStart = user.shiftStart;
         shiftEnd = user.shiftEnd;
       }
     }
@@ -61,19 +57,19 @@ export async function autoCheckout(): Promise<AutoCheckoutResult> {
       (clockOutTime - (attendance.clockInTime || clockOutTime)) / (1000 * 60)
     );
 
-    const checkoutValidation = validateCheckoutAndGetStatus({
-      clockInTimestamp: attendance.clockInTime || clockOutTime,
-      clockOutTimestamp: clockOutTime,
-      shiftStart,
-      shiftEnd,
-    });
+    // --- Overtime calculation ---
+    let overtimeMinutes = 0;
+    if (shiftEnd) {
+      const shiftEndMins = timeStringToMinutes(shiftEnd);
+      const clockOutMins = timestampToMinutesInTimezone(now, "Asia/Kolkata");
+      overtimeMinutes = Math.max(0, clockOutMins - shiftEndMins);
+    }
 
     await attendanceCrud.updateById(attendance._id.toString(), {
       clockOutTime,
       totalWorkMinutes,
-      status: checkoutValidation.status,
+      overtimeMinutes,
       isAutoCheckOut: true,
-    
     });
 
     return true; // successfully processed

@@ -1,6 +1,6 @@
 import attendanceCrud from "../../../crud/attendance.crud";
 import userCrud from "../../../crud/user.crud";
-// import { validateCheckoutAndGetStatus } from "../_shared/status";
+import { timeStringToMinutes, timestampToMinutesInTimezone } from "../_shared/time";
 
 export interface MidnightAutoCheckoutResult {
   processed: number;
@@ -28,7 +28,6 @@ export async function midnightAutoCheckout(): Promise<MidnightAutoCheckoutResult
       (clockOutTime - (attendance.clockInTime || clockOutTime)) / (1000 * 60)
     );
 
-    let shiftStart: string | undefined;
     let shiftEnd: string | undefined;
 
     const populatedUserId = attendance.userId as any;
@@ -37,24 +36,38 @@ export async function midnightAutoCheckout(): Promise<MidnightAutoCheckoutResult
       typeof populatedUserId === "object" &&
       "shiftStart" in populatedUserId
     ) {
-      shiftStart = populatedUserId.shiftStart;
       shiftEnd = populatedUserId.shiftEnd;
     } else {
       const userId = attendance.userId.toString();
       const user = await userCrud.findById(userId);
       if (user) {
-        shiftStart = user.shiftStart;
         shiftEnd = user.shiftEnd;
       }
+    }
+
+    // --- Overtime calculation ---
+    let overtimeMinutes = 0;
+    if (shiftEnd) {
+      const shiftEndMinutes = timeStringToMinutes(shiftEnd);
+      const clockOutMinutes = timestampToMinutesInTimezone(clockOutTime, "Asia/Kolkata");
+      overtimeMinutes = Math.max(0, clockOutMinutes - shiftEndMinutes);
+    }
+
+    // Flush any active geofence breach session
+    let totalGeofenceBreachMinutes = attendance.totalGeofenceBreachMinutes ?? 0;
+    if (attendance.geofenceBreachedAt) {
+      const sessionMinutes = (clockOutTime - (attendance.geofenceBreachedAt as number)) / (1000 * 60);
+      totalGeofenceBreachMinutes += sessionMinutes;
     }
 
     return attendanceCrud.updateById(attendance._id.toString(), {
       clockOutTime,
       totalWorkMinutes,
-
+      overtimeMinutes,
+      totalGeofenceBreachMinutes: Math.round(totalGeofenceBreachMinutes * 100) / 100,
+      geofenceBreachedAt: null,
       isAutoCheckOut: true,
-      clockOutImageUrl:
-        attendance.clockInImageUrl,
+      clockOutImageUrl: attendance.clockInImageUrl,
     });
   });
 
@@ -65,3 +78,4 @@ export async function midnightAutoCheckout(): Promise<MidnightAutoCheckoutResult
   );
   return { processed: updates.length };
 }
+

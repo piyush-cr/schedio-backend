@@ -1,19 +1,24 @@
-import mongoose, { Schema, Document } from "mongoose";
-import { AttendanceRecord, AttendanceStatus } from "../types";
+import mongoose, { Schema, Document } from 'mongoose';
+import { AttendanceRecord, AttendanceStatus } from '../types';
 
-export interface IAttendance extends Document, Omit<AttendanceRecord, "id"> {
+export interface IAttendance extends Document, Omit<AttendanceRecord, 'id'> {
   _id: mongoose.Types.ObjectId;
   userId: mongoose.Schema.Types.ObjectId;
   metadata?: any;
   geofenceBreachTime?: number | null;
   isAutoCheckOut?: boolean;
+  geofenceBreachedAt?: number | null;
+  totalGeofenceBreachMinutes?: number;
+  overtimeMinutes?: number;
+  clockInImageUrl?: string;
+  checkoutReminderSentAt?: number | null;
 }
 
 const AttendanceSchema = new Schema<IAttendance>(
   {
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       required: true,
       index: true,
     },
@@ -62,25 +67,23 @@ const AttendanceSchema = new Schema<IAttendance>(
       default: false,
     },
 
-    geofenceBreachTime: {
-      type: Number,
-      default: null,
-    },
-
+    geofenceBreachedAt: { type: Number, default: null },
+    totalGeofenceBreachMinutes: { type: Number, default: 0 },
+    overtimeMinutes: { type: Number, default: 0 },
+    checkoutReminderSentAt: { type: Number, default: null },
     metadata: {
       type: Schema.Types.Mixed,
       default: {},
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 AttendanceSchema.index({ userId: 1, date: 1 }, { unique: true });
 AttendanceSchema.index({ userId: 1, date: -1 });
 AttendanceSchema.index({ userId: 1, status: 1, date: -1 });
 
-
 export const Attendance = mongoose.model<IAttendance>(
-  "Attendance",
-  AttendanceSchema
+  'Attendance',
+  AttendanceSchema,
 );

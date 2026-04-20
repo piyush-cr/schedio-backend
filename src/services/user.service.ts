@@ -1,11 +1,11 @@
-import userCrud from "../crud/user.crud";
-import { UserFilter, UserUpdateInput, IUser } from "../types/user.types";
-import { ApiError } from "../utils/ApiError";
+import userCrud from '../crud/user.crud';
+import { UserFilter, UserUpdateInput, IUser } from '../types/user.types';
+import { ApiError } from '../utils/ApiError';
 
 async function getMe(userId: string): Promise<IUser> {
   const user = await userCrud.findById(userId);
   if (!user) {
-    throw new ApiError("User not found", 404);
+    throw new ApiError('User not found', 404);
   }
   return user;
 }
@@ -19,18 +19,18 @@ async function getMe(userId: string): Promise<IUser> {
  */
 async function updateProfile(
   userId: string,
-  updates: Pick<UserUpdateInput, "name" | "phone" | "fcmToken">
+  updates: Pick<UserUpdateInput, 'name' | 'phone' | 'fcmToken'>,
 ): Promise<IUser> {
   const user = await userCrud.updateById(userId, updates);
   if (!user) {
-    throw new ApiError("User not found", 404);
+    throw new ApiError('User not found', 404);
   }
   return user;
 }
 
 async function listUsers(
   filter: UserFilter = {},
-  options: { page: number; limit: number } = { page: 1, limit: 20 }
+  options: { page: number; limit: number } = { page: 1, limit: 20 },
 ): Promise<{ users: IUser[]; total: number; page: number; limit: number }> {
   const [users, total] = await Promise.all([
     userCrud.findManyPaginated(filter, options),
@@ -39,5 +39,13 @@ async function listUsers(
   return { users, total, page: options.page, limit: options.limit };
 }
 
-const userService = { getMe, updateProfile, listUsers };
+async function getFcmToken(userId: string): Promise<string | null> {
+  const user = await userCrud.findById(userId);
+  if (!user) {
+    throw new ApiError('User not found', 404);
+  }
+  return user.fcmToken;
+}
+
+const userService = { getMe, updateProfile, listUsers,getFcmToken };
 export default userService;

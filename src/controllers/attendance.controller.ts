@@ -4,6 +4,8 @@ import { AuthRequest } from "../middleware/auth";
 import { MulterRequest } from "../types";
 import { deleteLocalFile } from "../utils/deleteFile";
 import { BadRequestError, UnauthorizedError } from "../utils/ApiError";
+import userService from "../services/user.service";
+
 
 async function checkIn(
     req: AuthRequest & MulterRequest,
@@ -253,6 +255,35 @@ async function clearGeofenceBreach(
     }
 }
 
+async function heartbeat(
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+): Promise<void> {
+    try {
+        const userId = req.user?.userId;
+        if (!userId) throw new UnauthorizedError("User is unauthorized");
+
+        const { latitude, longitude } = req.body;
+        const fcmToken = await userService.getFcmToken(userId);
+        
+        if (latitude === undefined || longitude === undefined) {
+            throw new BadRequestError("latitude and longitude are required");
+        }
+
+        const result = await attendanceService.heartbeat({
+            userId,
+            latitude: Number(latitude),
+            longitude: Number(longitude),
+            fcmToken: fcmToken || undefined,
+        });
+
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        next(error);
+    }
+}
+
 const attendanceController = {
     checkIn,
     checkOut,
@@ -264,6 +295,7 @@ const attendanceController = {
     getUserAttendanceForSenior,
     reportGeofenceBreach,
     clearGeofenceBreach,
+    heartbeat,
 };
 
 export default attendanceController;

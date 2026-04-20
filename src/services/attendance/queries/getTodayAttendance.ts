@@ -16,6 +16,8 @@ export interface TodayAttendanceResult {
   totalWorkMinutes: number;
   officeLat: number | null;
   officeLng: number | null;
+  overtimeMinutes: number;
+  totalGeofenceBreachMinutes: number;
 }
 
 /**
@@ -57,5 +59,7 @@ export async function getTodayAttendance(
     totalWorkMinutes,
     officeLat: user.officeLat ?? null,
     officeLng: user.officeLng ?? null,
+    overtimeMinutes: attendance?.overtimeMinutes || 0,
+    totalGeofenceBreachMinutes: attendance?.totalGeofenceBreachMinutes || 0,
   };
 }

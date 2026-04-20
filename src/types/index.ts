@@ -90,9 +90,12 @@ export interface AttendanceRecord {
   clockOutImageUrl?: string;
 
   totalWorkMinutes: number;
+  overtimeMinutes?: number;
+  totalGeofenceBreachMinutes?: number;
   status: AttendanceStatus;
   isAutoCheckOut?: boolean;
   geofenceBreachTime?: number | null;
+  geofenceBreachedAt?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }

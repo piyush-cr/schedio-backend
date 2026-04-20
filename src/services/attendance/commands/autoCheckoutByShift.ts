@@ -31,7 +31,6 @@ export async function autoCheckoutByShift(targetShiftEnd: string): Promise<AutoC
 
   const results = await Promise.all(openAttendances.map(async (attendance) => {
     // Get user shift info
-    let shiftStart: string | undefined;
     let shiftEnd: string | undefined;
 
     const populatedUserId = attendance.userId as any;
@@ -40,13 +39,11 @@ export async function autoCheckoutByShift(targetShiftEnd: string): Promise<AutoC
       typeof populatedUserId === "object" &&
       "shiftStart" in populatedUserId
     ) {
-      shiftStart = populatedUserId.shiftStart;
       shiftEnd = populatedUserId.shiftEnd;
     } else {
       const userId = attendance.userId.toString();
       const user = await userCrud.findById(userId);
       if (user) {
-        shiftStart = user.shiftStart;
         shiftEnd = user.shiftEnd;
       }
     }
@@ -69,10 +66,18 @@ export async function autoCheckoutByShift(targetShiftEnd: string): Promise<AutoC
       (clockOutTime - (attendance.clockInTime || clockOutTime)) / (1000 * 60)
     );
 
+    // --- Overtime calculation ---
+    let overtimeMinutes = 0;
+    if (shiftEnd) {
+      const shiftEndMins = timeStringToMinutes(shiftEnd);
+      const clockOutMins = timestampToMinutesInTimezone(now, "Asia/Kolkata");
+      overtimeMinutes = Math.max(0, clockOutMins - shiftEndMins);
+    }
 
     await attendanceCrud.updateById(attendance._id.toString(), {
       clockOutTime,
       totalWorkMinutes,
+      overtimeMinutes,
       isAutoCheckOut: true,
       clockOutImageUrl: attendance.clockInImageUrl,
     });

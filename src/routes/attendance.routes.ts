@@ -150,6 +150,21 @@ router.post(
  *                   example: "Check-out successful"
  *                 data:
  *                   type: object
+ *                   properties:
+ *                     latitude:
+ *                       type: number
+ *                     longitude:
+ *                       type: number
+ *                     totalWorkMinutes:
+ *                       type: number
+ *                     overtimeMinutes:
+ *                       type: number
+ *                     totalGeofenceBreachMinutes:
+ *                       type: number
+ *                     status:
+ *                       type: string
+ *                     clockOutTime:
+ *                       type: string
  *       400:
  *         description: Validation error or check-out failed
  *         content:
@@ -383,6 +398,10 @@ router.get(
  *                       type: string
  *                     totalWorkMinutes:
  *                       type: number
+ *                     overtimeMinutes:
+ *                       type: number
+ *                     totalGeofenceBreachMinutes:
+ *                       type: number
  *       401:
  *         description: Unauthorized
  *         content:
@@ -508,6 +527,10 @@ router.get(
  *                               status:
  *                                 type: string
  *                               totalWorkMinutes:
+ *                                 type: number
+ *                               overtimeMinutes:
+ *                                 type: number
+ *                               totalGeofenceBreachMinutes:
  *                                 type: number
  *                     pagination:
  *                       type: object
@@ -674,6 +697,82 @@ router.post(
   authenticate,
   requireSeniorOrJunior,
   attendanceController.clearGeofenceBreach
+);
+
+/**
+ * @swagger
+ * /api/attendance/heartbeat:
+ *   post:
+ *     summary: Status heartbeat from mobile app (poll every ~20 seconds)
+ *     description: |
+ *       Called by the mobile app to report user liveness, location, and FCM token.
+ *       Tracks cumulative geofence breach time and signals when the app should trigger checkout.
+ *     tags: [Attendance]
+ *     security:
+ *       - cookieAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - latitude
+ *               - longitude
+ *             properties:
+ *               latitude:
+ *                 type: number
+ *                 minimum: -90
+ *                 maximum: 90
+ *                 example: 28.6139
+ *               longitude:
+ *                 type: number
+ *                 minimum: -180
+ *                 maximum: 180
+ *                 example: 77.2090
+ *               fcmToken:
+ *                 type: string
+ *                 description: Firebase Cloud Messaging token for push notifications
+ *     responses:
+ *       200:
+ *         description: Heartbeat processed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     checkedIn:
+ *                       type: boolean
+ *                     insideGeofence:
+ *                       type: boolean
+ *                     shiftOngoing:
+ *                       type: boolean
+ *                     overtimeMinutes:
+ *                       type: number
+ *                     totalGeofenceBreachMinutes:
+ *                       type: number
+ *                     remainingBreachMinutes:
+ *                       type: number
+ *                     shouldCheckout:
+ *                       type: boolean
+ *                     message:
+ *                       type: string
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ */
+router.post(
+  "/heartbeat",
+  authenticate,
+  requireSeniorOrJunior,
+  attendanceController.heartbeat
 );
 
 export default router;

@@ -11,6 +11,7 @@ import { getAttendanceByDate } from "./queries/getAttendanceByDate";
 import { getUserAttendanceForSenior } from "./admin/getUserAttendanceForSenior";
 import { getUsersForAttendanceView } from "./admin/getUsersForAttendanceView";
 import { getAttendanceLogs } from "./queries/getAttendanceLogs";
+import { heartbeat } from "./commands/heartbeat";
 
 const attendanceService = {
   checkIn,
@@ -26,6 +27,7 @@ const attendanceService = {
   getUserAttendanceForSenior,
   getUsersForAttendanceView,
   getAttendanceLogs,
+  heartbeat,
 };
 
 export default attendanceService;
@@ -44,4 +46,5 @@ export {
   getUserAttendanceForSenior,
   getUsersForAttendanceView,
   getAttendanceLogs,
+  heartbeat,
 };

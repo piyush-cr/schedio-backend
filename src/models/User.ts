@@ -12,6 +12,7 @@ export interface IUser
   position?: UserPosition;
   fcmToken?: string;
   geofenceBreachTime?: number;
+  statusUpdatedAt: Date;
 }
 
 const UserSchema = new Schema<IUser>(
@@ -82,7 +83,11 @@ const UserSchema = new Schema<IUser>(
       match: /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/,
 
     },
-
+statusUpdatedAt: {
+  type: Date,
+  default: Date.now,
+  index: true,
+},
 
     shiftEnd: {
       type: String,

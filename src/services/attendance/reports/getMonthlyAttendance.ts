@@ -20,6 +20,8 @@ export interface DailyLog {
   clockOutImageUrl: string | null;
   totalWorkMinutes: number;
   status: AttendanceStatus;
+  overtimeMinutes: number;
+  totalGeofenceBreachMinutes: number;
 }
 
 export interface GetMonthlyAttendanceResult {
@@ -141,6 +143,8 @@ export async function getMonthlyAttendance(
         clockOutImageUrl: record.clockOutImageUrl || null,
         totalWorkMinutes: effectiveWorkMinutes,
         status: record.status,
+        overtimeMinutes: record.overtimeMinutes || 0,
+        totalGeofenceBreachMinutes: record.totalGeofenceBreachMinutes || 0,
       });
     } else {
       if (dateStr !== todayStr) {
@@ -156,6 +160,8 @@ export async function getMonthlyAttendance(
         clockOutImageUrl: null,
         totalWorkMinutes: 0,
         status: AttendanceStatus.ABSENT,
+        overtimeMinutes: 0,
+        totalGeofenceBreachMinutes: 0,
       });
     }
   }

@@ -74,6 +74,9 @@ export type AttendanceUpdateInput = {
   status?: AttendanceStatus;
   isAutoCheckOut?: boolean;
   geofenceBreachTime?: number | null;
+  overtimeMinutes?: number;
+  totalGeofenceBreachMinutes?: number;
+  geofenceBreachedAt?: number | null;
 };
 
 export interface CheckInInput {
