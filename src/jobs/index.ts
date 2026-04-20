@@ -10,11 +10,7 @@ export const initCron = (): void => {
 
     // Unified auto-checkout: cleanup for offline users (every 5 min)
     cron.schedule(
-<<<<<<< HEAD
-        '*/1 * * * *',
-=======
         '*/5 * * * *',
->>>>>>> a0b9806cb8726afe5c21c423d73ce7f3047d053c
         () =>
             withLock('unifiedAutoCheckout', async () => {
                 const result = await unifiedAutoCheckout();
