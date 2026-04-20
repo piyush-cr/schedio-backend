@@ -13,3 +13,7 @@ uploads/
 
 schedio-3f6ee-firebase-adminsdk-fbsvc-587ca433a3.json
 db/
+db/
+uploads/
+src_backup/
+schedioapp-key.pem

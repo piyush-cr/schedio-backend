@@ -1,31 +1,27 @@
-name: Deploy to schedioapp.in
+name: Deploy Backend
+
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
-concurrency:
-  group: deploy
-  cancel-in-progress: true
+    branches:
+      - main
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup SSH key
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-      - name: Deploy
-        run: |
-          ssh -i ~/.ssh/id_rsa \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
-            "cd /opt/schedioapp/app && \
-             git pull origin main && \
-             docker build -t schedioapp-backend:latest . && \
-             docker-compose -f /opt/schedioapp/docker-compose.prod.yml up -d --no-deps --force-recreate backend worker && \
-             echo DEPLOY_DONE"
-      - name: Health check
-        run: sleep 20 && curl -f https://api.schedioapp.in/health && echo "LIVE"
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+
+          script: |
+            cd ~/schedio-backend
+            git pull origin main
+            bun install
+            bun build src/index.ts --outdir=dist --target=bun
+            pm2 restart schedio-backend
+            pm2 save
